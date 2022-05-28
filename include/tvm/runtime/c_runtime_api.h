@@ -87,7 +87,8 @@ typedef enum {
   kOpenGL = 11,
   kDLMicroDev = 13,
   kDLHexagon = 14,
-  kDLWebGPU = 15
+  kDLWebGPU = 15,
+  kDLSYCL = 16
   // AddExtraTVMType which is not in DLPack here
 } TVMDeviceExtType;
 
