@@ -28,6 +28,7 @@ tvm_option(USE_CUDA "Build with CUDA" OFF)
 tvm_option(USE_OPENCL "Build with OpenCL" OFF)
 tvm_option(USE_OPENCL_GTEST "Path to OpenCL specific gtest version for runtime cpp tests." /path/to/opencl/gtest)
 tvm_option(USE_VULKAN "Build with Vulkan" OFF)
+tvm_option(USE_SYCL "Build with SYCL" OFF)
 
 
 # Whether to use spirv-tools.and SPIRV-Headers from Khronos github or gitlab.
@@ -473,6 +474,7 @@ include(cmake/modules/Metal.cmake)
 include(cmake/modules/ROCM.cmake)
 include(cmake/modules/LLVM.cmake)
 include(cmake/modules/Micro.cmake)
+include(cmake/modules/SYCL.cmake)
 include(cmake/modules/contrib/EthosN.cmake)
 include(cmake/modules/contrib/CMSISNN.cmake)
 include(cmake/modules/contrib/EthosU.cmake)

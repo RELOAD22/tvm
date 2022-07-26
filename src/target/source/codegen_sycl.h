@@ -21,8 +21,8 @@
  * \file codegen_opencl.h
  * \brief Generate OpenCL device code.
  */
-#ifndef TVM_TARGET_SOURCE_CODEGEN_OPENCL_H_
-#define TVM_TARGET_SOURCE_CODEGEN_OPENCL_H_
+#ifndef TVM_TARGET_SOURCE_CODEGEN_SYCL_H_
+#define TVM_TARGET_SOURCE_CODEGEN_SYCL_H_
 
 #include <tvm/target/codegen.h>
 
@@ -37,8 +37,11 @@ namespace codegen {
 class CodeGenSYCL final : public CodeGenC {
  public:
   CodeGenSYCL();
+  void Init(bool output_ssa, bool emit_asserts, std::string target_str,
+            const std::unordered_set<std::string>& devices);
   std::string Finish();
 
+  void AddFunction(const PrimFunc& f);
   // override print thread tag.
   void InitFuncState(const PrimFunc& f) final;
   void PrintFuncPrefix() final;                                              // NOLINT(*)
@@ -94,4 +97,4 @@ class CodeGenSYCL final : public CodeGenC {
 }  // namespace codegen
 }  // namespace tvm
 
-#endif  // TVM_TARGET_SOURCE_CODEGEN_OPENCL_H_
+#endif  // TVM_TARGET_SOURCE_CODEGEN_SYCL_H_

@@ -18,7 +18,7 @@
  */
 
 /*!
- * \file codegen_opencl.cc
+ * \file codegen_sycl.cc
  */
 #include "codegen_sycl.h"
 
@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "../../runtime/sycl/sycl_module.h"
 #include "../../runtime/opencl/opencl_module.h"
 #include "../../runtime/texture.h"
 #include "../../runtime/thread_storage_scope.h"
@@ -72,6 +73,18 @@ CodeGenSYCL::CodeGenSYCL() {
   restrict_keyword_ = "restrict";
 }
 
+void CodeGenSYCL::Init(bool output_ssa, bool emit_asserts, std::string target_str,
+                        const std::unordered_set<std::string>& devices) {
+  //emit_asserts_ = emit_asserts;
+  //declared_globals_.clear();
+  decl_stream << "// tvm target: " << target_str << "\n";
+  decl_stream << "#define TVM_EXPORTS\n";
+
+  decl_stream << "#include <CL/sycl.hpp>\n";
+  decl_stream << "using namespace sycl;\n";
+  CodeGenC::Init(output_ssa);
+}
+
 void CodeGenSYCL::InitFuncState(const PrimFunc& f) {
   CodeGenC::InitFuncState(f);
   this->SetTextureScope(InferTextureAccess().Infer(f->body));
@@ -87,7 +100,109 @@ void CodeGenSYCL::InitFuncState(const PrimFunc& f) {
   }
 }
 
-void CodeGenSYCL::PrintFuncPrefix() { stream << "__kernel void"; }
+
+
+void CodeGenSYCL::AddFunction(const PrimFunc& f) {
+  //function_names_.push_back(global_symbol.value());
+
+  // from CodeGenC -------------------
+  // clear previous generated state.
+  this->InitFuncState(f);
+  // reserve keywords
+  ReserveKeywordsAsUnique();
+
+  auto global_symbol = f->GetAttr<String>(tvm::attr::kGlobalSymbol);
+  ICHECK(global_symbol.defined())
+      << "CodeGenSYCL: Expect PrimFunc to have the global_symbol attribute";
+  bool no_alias = f->HasNonzeroAttr(tir::attr::kNoAlias);
+
+  this->PrintFuncPrefix();
+  this->PrintExtraAttrs(f);
+  this->stream << " " << static_cast<std::string>(global_symbol.value()) 
+              << "_dev(sycl::nd_item<3> item_ct1, ";
+
+  for (size_t i = 0; i < f->params.size(); ++i) {
+    tir::Var v = f->params[i];
+    std::string vid = AllocVarID(v.get());
+    if (i != 0) stream << ", ";
+    if (v.dtype().is_handle()) {
+      auto it = alloc_storage_scope_.find(v.get());
+      if (it != alloc_storage_scope_.end()) {
+        PrintStorageScope(it->second, stream);
+      }
+
+      PrintType(GetType(v), stream);
+      // Register handle data type
+      // TODO(tvm-team): consider simply keep type info in the
+      // type annotation(via a normalizing rewriting).
+      if (auto* ptr = v->type_annotation.as<PointerTypeNode>()) {
+        if (auto* prim = ptr->element_type.as<PrimTypeNode>()) {
+          RegisterHandleType(v.get(), prim->dtype);
+        }
+      }
+
+      if (no_alias) {
+        PrintRestrict(v, stream);
+      }
+    } else {
+      PrintType(GetType(v), stream);
+    }
+    stream << ' ' << vid;
+  }
+  stream << ") {\n";
+  this->PreFunctionBody(f);
+  int func_scope = this->BeginScope();
+  this->PrintStmt(f->body);
+  this->PrintFinalReturn();
+  this->EndScope(func_scope);
+  this->PrintIndent();
+  this->stream << "}\n\n";
+  // --------------------
+
+
+  // Print the packed function
+  stream << "// CodeGenSYCL: NOTE: Auto-generated packed function\n";
+  PrintFuncPrefix();
+  stream << " " << static_cast<std::string>(global_symbol.value());
+  stream << "(queue &Q, sycl::range<3> k0_dimGrid, sycl::range<3> k0_dimBlock, void** void_args) {\n";
+
+  // Print the packed function's void_args
+  for (size_t i = 0; i < f->params.size(); ++i) {
+    tir::Var v = f->params[i];
+    std::string vid = GetVarID(v.get());
+    stream << "  ";
+    PrintType(GetType(v), stream);
+    stream << ' ' << vid << " = (";
+    PrintType(GetType(v), stream);
+    stream << ")(*(int64_t *)(void_args[" << i << "]));\n";
+  }
+
+  // Print submit  
+  stream << "  Q.submit([&](handler &h) {\n";
+  stream << "    h.parallel_for(sycl::nd_range<3>(k0_dimGrid * k0_dimBlock, k0_dimBlock), [=](sycl::nd_item<3> item_ct1) {\n";
+  stream << "      " << global_symbol.value() << "_dev"
+         << "(item_ct1, ";
+  for (size_t i = 0; i < f->params.size(); ++i) {
+    tir::Var v = f->params[i];
+    std::string vid = GetVarID(v.get());
+    if (i != 0) stream << ", ";
+    stream << vid;
+  }
+  stream << ");\n";
+  stream << "    }); });\n";   
+
+
+  stream << "  Q.wait();\n";
+  stream << "}\n";
+
+}
+
+void CodeGenSYCL::PrintFuncPrefix() {
+  stream << "#ifdef __cplusplus\n"
+         << "extern \"C\"\n"
+         << "#endif\n"
+         << "void";
+}
 
 std::string CodeGenSYCL::Finish() {
   // inject extension enable pragma for fp16 and fp64
@@ -160,9 +275,9 @@ void CodeGenSYCL::BindThreadIndex(const IterVar& iv) {
   runtime::ThreadScope ts = runtime::ThreadScope::Create(iv->thread_tag);
   std::ostringstream os;
   if (ts.rank == 1) {
-    os << "get_local_id(" << ts.dim_index << ")";
+    os << "item_ct1.get_local_id(" << ts.dim_index << ")";
   } else {
-    os << "get_group_id(" << ts.dim_index << ")";
+    os << "item_ct1.get_group(" << ts.dim_index << ")";
   }
   var_idmap_[iv->var.get()] = CastFromTo(os.str(), DataType::UInt(64), iv->var.dtype());
 }
@@ -305,6 +420,7 @@ void CodeGenSYCL::PrintStorageSync(const CallNode* op) {
 }
 
 void CodeGenSYCL::PrintStorageScope(const std::string& scope, std::ostream& os) {  // NOLINT(*)
+/*
   if (scope == "global") {
     os << "__global ";
   } else if (scope == "shared") {
@@ -313,16 +429,17 @@ void CodeGenSYCL::PrintStorageScope(const std::string& scope, std::ostream& os) 
     os << "__read_only ";
   } else if (scope == "texture_write") {
     os << "__write_only ";
-  }
+  }*/
 }
 
 void CodeGenSYCL::PrintRestrict(const Var& v, std::ostream& os) {
+  /*
   // Apply restrict qualifer for non-texture types only
   if (auto* ptr = v->type_annotation.as<PointerTypeNode>()) {
     if (!runtime::IsTextureStorage(std::string(ptr->storage_scope))) {
       os << ' ' << restrict_keyword_;
     }
-  }
+  }*/
 }
 
 std::string CodeGenSYCL::CastFromTo(std::string value, DataType from, DataType target) {
@@ -578,14 +695,24 @@ runtime::Module BuildSYCL(IRModule mod, Target target) {
   std::stringstream code;
   const auto* fpostproc = Registry::Get("tvm_callback_opencl_postproc");
   for (auto kv : mod->functions) {
-    ICHECK(kv.second->IsInstance<PrimFuncNode>()) << "CodeGenOpenCL: Can only take PrimFunc";
+    ICHECK(kv.second->IsInstance<PrimFuncNode>()) << "CodeGenSYCL: Can only take PrimFunc";
     code << "// Function: " << kv.first->name_hint << std::endl;
     CodeGenSYCL cg;
-    cg.Init(output_ssa);
+    bool emit_asserts = false;
+
+    std::unordered_set<std::string> devices;
+    if (mod->GetAttr<Map<GlobalVar, String>>("device_contexts") != nullptr) {
+      Map<GlobalVar, String> device_contexts =
+          mod->GetAttr<Map<GlobalVar, String>>("device_contexts").value();
+      for (auto const& context : device_contexts) {
+        devices.insert(context.second.data());
+      }
+    }
+    cg.Init(output_ssa, emit_asserts, target->str(), devices);
     auto f = Downcast<PrimFunc>(kv.second);
     auto calling_conv = f->GetAttr<Integer>(tvm::attr::kCallingConv);
     ICHECK(calling_conv == CallingConv::kDeviceKernelLaunch)
-        << "CodeGenOpenCL: expect calling_conv equals CallingConv::kDeviceKernelLaunch";
+        << "CodeGenSYCL: expect calling_conv equals CallingConv::kDeviceKernelLaunch";
     cg.AddFunction(f);
     std::string fsource = cg.Finish();
     // Debug for SYCL
@@ -596,7 +723,7 @@ runtime::Module BuildSYCL(IRModule mod, Target target) {
     code << fsource;
   }
 
-  return OpenCLModuleCreate(code.str(), "cl", ExtractFuncInfo(mod), code.str());
+  return SYCLModuleCreate(code.str(), "cl", ExtractFuncInfo(mod), code.str());
 }
 
 TVM_REGISTER_GLOBAL("target.build.sycl").set_body_typed(BuildSYCL);

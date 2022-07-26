@@ -233,6 +233,7 @@ class Device(ctypes.Structure):
         "ext_dev": 12,
         "hexagon": 14,
         "webgpu": 15,
+        "sycl": 16, 
     }
 
     def __init__(self, device_type, device_id):
