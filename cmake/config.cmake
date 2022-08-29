@@ -62,6 +62,14 @@ set(USE_SDACCEL OFF)
 # Whether enable Intel FPGA SDK for OpenCL (AOCL) runtime
 set(USE_AOCL OFF)
 
+# Whether enable SYCL runtime
+#
+# Possible values:
+# - ON: enable SYCL with cmake's auto search
+# - OFF: disable SYCL
+# - /path/to/sycl: use specific path to sycl
+set(USE_SYCL OFF)
+
 # Whether enable OpenCL runtime
 #
 # Possible values:
