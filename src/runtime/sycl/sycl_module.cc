@@ -41,97 +41,73 @@ namespace runtime {
 class SYCLWrappedFunc {
  public:
   // initialize the SYCL function.
-  void Init(SYCLModuleNode* m, 
-            std::string func_name) {
-    
+  void Init(SYCLModuleNode* m, std::string func_name, \
+    size_t num_void_args, const std::vector<std::string>& launch_param_tags) {
     VLOG(0) << "Init SYCLWrappedFunc";
     w_ = m->GetGlobalWorkspace();
     m_ = m;
     //sptr_ = sptr;
     //entry_ = entry;
     func_name_ = func_name;
-    //arg_size_ = arg_size;
-    //launch_param_config_.Init(arg_size.size(), launch_param_tags);
+    launch_param_config_.Init(num_void_args, launch_param_tags);
 
     VLOG(0) << m_->GetSource("sycl");
-
-    std::string filepath = "/tmp/mykernel.cpp";
-    std::string sharedlibpath = "/tmp/mykernel.so";
+    system("mkdir /tmp/tvm_sycl");
+    std::string filepath = "/tmp/tvm_sycl/"+func_name+".cpp";
+    std::string sharedlibpath = "/tmp/tvm_sycl/"+func_name+".so";
     std::ofstream myfile;
     myfile.open(filepath);
-
-    myfile << m_->GetSource("sycld");
-
+    myfile << m_->GetSource("sycl");
     myfile.close();
-
     std::string cmd = "$DPCPP_HOME/llvm/build/bin/clang++ -std=c++17 -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -fPIC -shared " + filepath + " -o " + sharedlibpath;
-    
     system(cmd.c_str());
     VLOG(0) << cmd;
-
-    sycl::range<3> k0_dimBlock(64, 1, 1);
-    sycl::range<3> k0_dimGrid(2, 1, 1);
-    VLOG(0) << "sycl!!!!!!";
   }
   // invoke the function with void arguments
   void operator()(TVMArgs args, TVMRetValue* rv, void** void_args) const {
     VLOG(0) << "enter sycl wrapped func operator()";
-
-
-    int N = 128;
-    void *dl_handler = dlopen("/tmp/mykernel.so", RTLD_LAZY);
+    std::string sharedlibpath = "/tmp/tvm_sycl/"+func_name_+".so";
+    void *dl_handler = dlopen(sharedlibpath.c_str(), RTLD_LAZY);
     if (dl_handler == NULL)
     {
         printf("ERROR:%s:dlopen\n", dlerror());
         return;
     }
-
-    void (*kernel_func)(sycl::queue &Q, sycl::range<3> k0_dimGrid, sycl::range<3> k0_dimBlock, void** void_args) = (void (*)(sycl::queue &Q, sycl::range<3> k0_dimGrid, sycl::range<3> k0_dimBlock, void** void_args))dlsym(dl_handler, "myadd_kernel0");
+    void (*kernel_func)(sycl::queue &Q, sycl::range<3> k0_dimGrid, sycl::range<3> k0_dimBlock, void** void_args) = (void (*)(sycl::queue &Q, sycl::range<3> k0_dimGrid, sycl::range<3> k0_dimBlock, void** void_args))dlsym(dl_handler, func_name_.c_str());
     if (kernel_func == NULL)
     {
         printf("ERROR:%s:dlsym\n", dlerror());
         return;
     }
-
-    sycl::range<3> k0_dimBlock(64, 1, 1);
-    sycl::range<3> k0_dimGrid(2, 1, 1);
+    ThreadWorkLoad wl = launch_param_config_.Extract(args);
+    sycl::range<3> k0_dimGrid(wl.grid_dim(0), wl.grid_dim(1), wl.grid_dim(2));
+    sycl::range<3> k0_dimBlock(wl.block_dim(0), wl.block_dim(1), wl.block_dim(2));
     
     sycl::queue Q;
-      float *host_array1 = sycl::malloc_host<float>(N, Q);
-      float *host_array2 = sycl::malloc_host<float>(N, Q);
-      float *shared_array = sycl::malloc_shared<float>(N, Q);
-      for (int i = 0; i < N; i++) {
-          // Initialize hostArray on host
-          host_array1[i] = i;
-          host_array2[i] = 2 * i;
-      } 
-    std::cout << "call kernel_func" << std::endl;
-
-    int n = N;
-    int stride  = 1;
-    int stride1 = 1;
-    int stride2 = 1;
+    /*
 
 
     void * void_args1[] = {(void *)&shared_array, (void *)&host_array1, (void *)&host_array2,
                                         (void *)&n, (void *)&stride, (void *)&stride1, (void *)&stride2};
     
-    int sn = (int)(*(int64_t *)(void_args[3]));
-    int sstride = (int)(*(int64_t *)(void_args[4]));
-    int sstride1 = (int)(*(int64_t *)(void_args[5]));
-    int sstride2 = (int)(*(int64_t *)(void_args[6]));
-
-    std::cout << "n: " << sn << "stride: " << sstride << "stride1: " << sstride1 << "stride2: " << sstride2 << std::endl;
-    kernel_func(Q, k0_dimGrid, k0_dimBlock, void_args1);
-    for (int i = 0; i < N; i++) {
+    void *dst = void_args[0], *source1 = void_args[1], *source2 = void_args[2];
+    int n = *(int *)void_args[3], stride0=*(int *)void_args[4], stride1=*(int *)void_args[5], stride2=*(int *)void_args[6];
+    std::cout << "n: " << n << " stride: " << stride0 << " stride1: " << stride1 << " stride2: " << stride2 << std::endl;
+    */
+    
+    kernel_func(Q, k0_dimGrid, k0_dimBlock, void_args);
+    /*
+    for (int i = 0; i < n; i++) {
         // access sharedArray on host
-        host_array1[i] = shared_array[i];
-        std::cout << host_array1[i] << " ";
-    } 
+        std::cout << ((float *)(*(int64_t *)dst))[i] << " ";
+    }
     std::cout << std::endl;
+    */
+    /*
     free(shared_array, Q);
     free(host_array1, Q);
     free(host_array2, Q);
+    */
 	  dlclose(dl_handler);
     /*
     ICHECK(w_->context != nullptr) << "No SYCL device";
@@ -245,7 +221,7 @@ PackedFunc SYCLModuleNode::GetFunction(const std::string& name,
   }
   VLOG(0) << "SYCLModuleNode::begin initialize the wrapped func:";
   // initialize the wrapped func.
-  f.Init(this, name);
+  f.Init(this, name, info.arg_types.size(), info.launch_param_tags);
   VLOG(0) << "SYCLModuleNode::finish initialize the wrapped func:";
   return PackFuncVoidAddr(f, info.arg_types);
 }

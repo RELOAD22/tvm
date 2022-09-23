@@ -25,6 +25,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <regex>
 
 #include "../../runtime/sycl/sycl_module.h"
 #include "../../runtime/opencl/opencl_module.h"
@@ -116,22 +117,14 @@ void CodeGenSYCL::AddFunction(const PrimFunc& f) {
       << "CodeGenSYCL: Expect PrimFunc to have the global_symbol attribute";
   bool no_alias = f->HasNonzeroAttr(tir::attr::kNoAlias);
 
-  this->PrintFuncPrefix();
+  this->stream << "#define";
   this->PrintExtraAttrs(f);
   this->stream << " " << static_cast<std::string>(global_symbol.value()) 
-              << "_dev(sycl::nd_item<3> item_ct1, ";
-
+              << "_dev() ";
   for (size_t i = 0; i < f->params.size(); ++i) {
     tir::Var v = f->params[i];
     std::string vid = AllocVarID(v.get());
-    if (i != 0) stream << ", ";
     if (v.dtype().is_handle()) {
-      auto it = alloc_storage_scope_.find(v.get());
-      if (it != alloc_storage_scope_.end()) {
-        PrintStorageScope(it->second, stream);
-      }
-
-      PrintType(GetType(v), stream);
       // Register handle data type
       // TODO(tvm-team): consider simply keep type info in the
       // type annotation(via a normalizing rewriting).
@@ -140,22 +133,24 @@ void CodeGenSYCL::AddFunction(const PrimFunc& f) {
           RegisterHandleType(v.get(), prim->dtype);
         }
       }
-
-      if (no_alias) {
-        PrintRestrict(v, stream);
-      }
-    } else {
-      PrintType(GetType(v), stream);
     }
-    stream << ' ' << vid;
-  }
-  stream << ") {\n";
+  }            
+  stream << " {\\\n";
+  //
+  std::ostringstream preStream;
+  preStream << this->stream.str();
+  this->stream.str("");
   this->PreFunctionBody(f);
   int func_scope = this->BeginScope();
   this->PrintStmt(f->body);
   this->PrintFinalReturn();
   this->EndScope(func_scope);
   this->PrintIndent();
+
+  //替换#define区域内\n为\\n, 因为#define需要在同一行
+  std::string defineStr = std::regex_replace(this->stream.str(), std::regex("\n"), "\\\n");
+  this->stream.str("");
+  this->stream<< preStream.str() << defineStr;
   this->stream << "}\n\n";
   // --------------------
 
@@ -179,16 +174,10 @@ void CodeGenSYCL::AddFunction(const PrimFunc& f) {
 
   // Print submit  
   stream << "  Q.submit([&](handler &h) {\n";
+  //stream <<"    "<< this->mem_allocate_code.str();
   stream << "    h.parallel_for(sycl::nd_range<3>(k0_dimGrid * k0_dimBlock, k0_dimBlock), [=](sycl::nd_item<3> item_ct1) {\n";
   stream << "      " << global_symbol.value() << "_dev"
-         << "(item_ct1, ";
-  for (size_t i = 0; i < f->params.size(); ++i) {
-    tir::Var v = f->params[i];
-    std::string vid = GetVarID(v.get());
-    if (i != 0) stream << ", ";
-    stream << vid;
-  }
-  stream << ");\n";
+         << "();\n";
   stream << "    }); });\n";   
 
 
@@ -392,34 +381,49 @@ void CodeGenSYCL::PrintVecAddr(const BufferNode* buffer, DataType t, PrimExpr ba
 }
 std::string CodeGenSYCL::GetVecLoad(DataType t, const BufferNode* buffer, PrimExpr base) {
   std::ostringstream os;
-  os << "vload" << t.lanes() << "(0, ";
+
+  std::ostringstream x;
+  PrintType(t, x);
+  std::string type = x.str();
+  std::string basic_type = type;
+  if(t.lanes() >= 2){
+    basic_type = std::regex_replace(type, std::regex("\\d+"), "");
+  }
+  //for example, type=float4, basic_type=float
+
+  os << "({";
+  os << "vec<"<<basic_type<<", " << t.lanes() <<"> x; ";
+  os << "x.load(0, multi_ptr<"<<basic_type<<", sycl::access::address_space::global_space>(";
   PrintVecAddr(buffer, t, base, os);
-  os << ")";
+  os << ")); ";
+  os << "x;";
+  os << "})";
   return os.str();
 }
 
 void CodeGenSYCL::PrintVecStore(const BufferNode* buffer, DataType t, PrimExpr base,
                                   const std::string& value) {
   this->PrintIndent();
-  stream << "vstore" << t.lanes() << "(" << value << ", 0, ";
+  stream << value << ".store(0, multi_ptr<float, sycl::access::address_space::global_space>(";
   PrintVecAddr(buffer, t, base, stream);
-  stream << ");\n";
+  stream << "));\n";
 }
 
 void CodeGenSYCL::PrintStorageSync(const CallNode* op) {
   const std::string& sync = op->args[0].as<StringImmNode>()->value;
   if (sync == "warp") {
     this->PrintIndent();
-    this->stream << "barrier(CLK_LOCAL_MEM_FENCE);\n";
+    this->stream << "group_barrier(item_ct1.get_group());\n";
   } else if (sync == "shared") {
     this->PrintIndent();
-    this->stream << "barrier(CLK_LOCAL_MEM_FENCE);\n";
+    this->stream << "group_barrier(item_ct1.get_group());\n";
   } else if (sync == "global") {
     LOG(FATAL) << "not supported";
   }
 }
 
 void CodeGenSYCL::PrintStorageScope(const std::string& scope, std::ostream& os) {  // NOLINT(*)
+  ICHECK_NE(scope, "shared") << "no storage scope keyword in SYCL!";
 /*
   if (scope == "global") {
     os << "__global ";
@@ -495,7 +499,32 @@ void CodeGenSYCL::VisitExpr_(const CastNode* op, std::ostream& os) {
 
 void CodeGenSYCL::VisitStmt_(const AllocateNode* op) {
   allocation_size_.insert({op->buffer_var.get(), op->ConstantAllocationSize() * op->dtype.lanes()});
-  CodeGenC::VisitStmt_(op);
+  ICHECK(!is_zero(op->condition));
+  std::string vid = AllocVarID(op->buffer_var.get());
+
+  size_t constant_size = op->ConstantAllocationSize();
+  ICHECK_GT(constant_size, 0) << "Can only handle constant size stack allocation for now";
+
+  auto scope = GetPtrStorageScope(op->buffer_var);
+  alloc_storage_scope_[op->buffer_var.get()] = scope;
+  ICHECK_NE(scope, "global") << "Cannot allocate global memory in kernel when targeting SYCL. ";
+  if (scope == "shared") {
+    this->PrintIndent();
+    stream<< "auto " << vid << " = *sycl::ext::oneapi::group_local_memory<";
+    PrintType(op->dtype, stream);
+    stream << '[' << constant_size << "]>(item_ct1.get_group());\n";
+    /*
+    this->mem_allocate_code << "sycl::local_accessor<";
+    PrintType(op->dtype, this->mem_allocate_code);
+    this->mem_allocate_code << ", 1> "<< vid << "(sycl::range(" << constant_size<< "),h);\n";
+    */
+  }else{
+    this->PrintIndent();
+    PrintType(op->dtype, stream);
+    stream << ' ' << vid << '[' << constant_size << "];\n";
+  }
+  RegisterHandleType(op->buffer_var.get(), op->dtype);
+  this->PrintStmt(op->body);
 }
 
 void CodeGenSYCL::VisitExpr_(const CallNode* op, std::ostream& os) {
@@ -587,12 +616,12 @@ void CodeGenSYCL::VisitExpr_(const BroadcastNode* op, std::ostream& os) {  // NO
   std::string v = PrintExpr(op->value);
   os << "((";
   PrintType(op->dtype, os);
-  os << ")(";
+  os << "){";
   for (int i = 0; i < op->lanes; ++i) {
     if (i != 0) os << ", ";
     os << v;
   }
-  os << "))";
+  os << "})";
 }
 
 void CodeGenSYCL::VisitExpr_(const FloatImmNode* op, std::ostream& os) {  // NOLINT(*)

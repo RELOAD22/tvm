@@ -92,6 +92,8 @@ class CodeGenSYCL final : public CodeGenC {
   // Mapping from buffer to allocation size.
   // Useful to track when a scalar store of a vectorized texture load is required.
   std::unordered_map<const Object*, size_t> allocation_size_;
+  //local memory allocate code
+  std::ostringstream mem_allocate_code;
 };
 
 }  // namespace codegen
