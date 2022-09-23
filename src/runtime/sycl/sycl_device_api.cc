@@ -199,10 +199,18 @@ void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
 
 void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
                                       DLDataType type_hint) {
-                                      
-  /*
   this->Init();
-  ICHECK(context != nullptr) << "No SYCL device";
+  void* ret;
+
+  if (dev.device_type == kDLSYCLHost) {
+    VLOG(1) << "allocating " << size << "bytes on host";
+    ret = sycl::malloc_host(size, this->sycl_context);
+  }else{
+    VLOG(1) << "allocating " << size << "bytes share memory";
+    ret = sycl::malloc_shared(size, this->sycl_device, this->sycl_context);
+  }
+  return ret;
+  /*
   cl_int err_code;
   cl::syclBufferDescriptor* desc = new cl::syclBufferDescriptor;
   // CL_INVALID_BUFFER_SIZE if size is 0.
@@ -212,8 +220,8 @@ void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
   desc->buffer = clCreateBuffer(this->context, CL_MEM_READ_WRITE, size, nullptr, &err_code);
   desc->layout = cl::syclBufferDescriptor::MemoryLayout::kBuffer1D;
   OPENCL_CHECK_ERROR(err_code);
-  return desc;*/
-  return nullptr;
+  return desc;
+  */
 }
 
 void* SYCLWorkspace::AllocDataSpace(Device dev, int ndim, const int64_t* shape, DLDataType dtype,
@@ -269,6 +277,17 @@ void SYCLWorkspace::FreeTextureWorkspace(Device dev, void* ptr) {
 }
 
 void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) {
+  size_t from_size = GetDataSize(*from);
+  size_t to_size = GetDataSize(*to);
+  char* from_data = (char*)from->data;
+  size_t from_offset = from->byte_offset;
+  from_data += from_offset;
+  char* to_data = (char*)to->data;
+  size_t to_offset = to->byte_offset;
+  to_data += to_offset;
+
+  ICHECK_EQ(from_size, to_size) << "TVMArrayCopyFromTo: The size must exactly match";
+  this->default_queue.memcpy(to_data, from_data, from_size).wait();
   /*
   size_t nbytes = GetDataSize(*from);
   ICHECK_EQ(nbytes, GetDataSize(*to));
@@ -396,7 +415,7 @@ bool syclMatchPlatformInfo(cl_platform_id pid, cl_platform_info param_name, std:
 }
 
 void SYCLWorkspace::Init(const std::string& type_key, const std::string& device_type,
-                           const std::string& platform_name) {
+                           const std::string& platform_name) {                     
   if (initialized_) return;
   std::lock_guard<std::mutex> lock(this->mu);
   if (initialized_) return;
@@ -442,6 +461,16 @@ void SYCLWorkspace::Init(const std::string& type_key, const std::string& device_
   }
   this->events.resize(this->devices.size());
   initialized_ = true;
+  // sycl add
+  if(device_type == "gpu"){
+    sycl::gpu_selector device_selector;
+    this->sycl_device = sycl::device(device_selector);
+  }else{
+    sycl::default_selector device_selector;
+    this->sycl_device = sycl::device(device_selector);
+  }
+  this->sycl_context = sycl::context(this->sycl_device);
+  this->default_queue = sycl::queue(this->sycl_device);
 }
 
 TVM_REGISTER_GLOBAL("device_api.sycl.alloc_nd").set_body([](TVMArgs args, TVMRetValue* rv) {

@@ -57,6 +57,7 @@
 #else
 #include <CL/opencl.h>
 #endif
+#include <CL/sycl.hpp>
 
 #include <memory>
 #include <mutex>
@@ -246,6 +247,11 @@ class SYCLWorkspace : public DeviceAPI {
   std::vector<size_t> free_kernel_ids;
   // the mutex for initialization
   std::mutex mu;
+  //sycl add
+  sycl::device sycl_device;
+  sycl::context sycl_context;
+  sycl::queue default_queue;
+
   // destructor
   ~SYCLWorkspace() {
     if (context != nullptr) {
@@ -257,7 +263,7 @@ class SYCLWorkspace : public DeviceAPI {
             const std::string& platform_name = "");
   virtual void Init() { Init("sycl", "gpu"); }
   // Check whether the context is SYCL or not.
-  virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLOpenCL; }
+  virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLSYCL; }
   // get the queue of the device
   cl_command_queue GetQueue(Device dev) {
     ICHECK(IsSYCLDevice(dev));
