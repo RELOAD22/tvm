@@ -423,7 +423,14 @@ void CodeGenSYCL::PrintStorageSync(const CallNode* op) {
 }
 
 void CodeGenSYCL::PrintStorageScope(const std::string& scope, std::ostream& os) {  // NOLINT(*)
-  ICHECK_NE(scope, "shared") << "no storage scope keyword in SYCL!";
+  if(scope =="shared"){
+    std::string code = static_cast<std::ostringstream&>(os).str();
+    std::string str = code.substr(code.length()-10, std::string::npos);
+    if(str!="(volatile "){
+      std::cout<<str<<std::endl;
+    }
+  }
+  //ICHECK_NE(scope, "shared") << "no storage scope keyword in SYCL!";
 /*
   if (scope == "global") {
     os << "__global ";
@@ -607,6 +614,15 @@ void CodeGenSYCL::VisitExpr_(const CallNode* op, std::ostream& os) {
       enable_atomics_ = true;
     }
     CodeGenC::VisitExpr_(op, os);
+  } else if (op->op.same_as(builtin_call_pure_extern_)) {
+      ICHECK_GE(op->args.size(), 1U);
+      auto func = Downcast<StringImm>(op->args[0]);
+      if(func->value == "expf"){
+        func = StringImm("exp");
+      }else if(func->value == "powf"){
+        func = StringImm("pow");
+      }
+      this->PrintCallExtern(GetType(GetRef<PrimExpr>(op)), func->value, op->args, true, os);
   } else {
     CodeGenC::VisitExpr_(op, os);
   }

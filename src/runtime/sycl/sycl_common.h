@@ -74,144 +74,24 @@
 
 namespace tvm {
 namespace runtime {
-namespace cl {
+namespace syclT {
+
+/*!
+ * \brief Protected SYCL call
+ * \param func Expression to call.
+ */
+#define SYCL_CALL(func)                                       \
+  {                                                           \
+    try{                                                      \
+      func;                                                   \
+    }catch(const sycl::exception &e){                         \
+      std::cout << "Caught synchronous SYCL exception:\n"     \
+              << e.what() << std::endl;                       \
+    }                                                         \
+  }
 
 static_assert(sizeof(cl_mem) == sizeof(void*), "Required to store cl_mem inside void*");
 
-inline const char* CLGetErrorString(cl_int error) {
-  switch (error) {
-    case CL_SUCCESS:
-      return "CL_SUCCESS";
-    case CL_DEVICE_NOT_FOUND:
-      return "CL_DEVICE_NOT_FOUND";
-    case CL_DEVICE_NOT_AVAILABLE:
-      return "CL_DEVICE_NOT_AVAILABLE";
-    case CL_COMPILER_NOT_AVAILABLE:
-      return "CL_COMPILER_NOT_AVAILABLE";
-    case CL_MEM_OBJECT_ALLOCATION_FAILURE:
-      return "CL_MEM_OBJECT_ALLOCATION_FAILURE";
-    case CL_OUT_OF_RESOURCES:
-      return "CL_OUT_OF_RESOURCES";
-    case CL_OUT_OF_HOST_MEMORY:
-      return "CL_OUT_OF_HOST_MEMORY";
-    case CL_PROFILING_INFO_NOT_AVAILABLE:
-      return "CL_PROFILING_INFO_NOT_AVAILABLE";
-    case CL_MEM_COPY_OVERLAP:
-      return "CL_MEM_COPY_OVERLAP";
-    case CL_IMAGE_FORMAT_MISMATCH:
-      return "CL_IMAGE_FORMAT_MISMATCH";
-    case CL_IMAGE_FORMAT_NOT_SUPPORTED:
-      return "CL_IMAGE_FORMAT_NOT_SUPPORTED";
-    case CL_BUILD_PROGRAM_FAILURE:
-      return "CL_BUILD_PROGRAM_FAILURE";
-    case CL_MAP_FAILURE:
-      return "CL_MAP_FAILURE";
-    case CL_INVALID_VALUE:
-      return "CL_INVALID_VALUE";
-    case CL_INVALID_DEVICE_TYPE:
-      return "CL_INVALID_DEVICE_TYPE";
-    case CL_INVALID_PLATFORM:
-      return "CL_INVALID_PLATFORM";
-    case CL_INVALID_DEVICE:
-      return "CL_INVALID_DEVICE";
-    case CL_INVALID_CONTEXT:
-      return "CL_INVALID_CONTEXT";
-    case CL_INVALID_QUEUE_PROPERTIES:
-      return "CL_INVALID_QUEUE_PROPERTIES";
-    case CL_INVALID_COMMAND_QUEUE:
-      return "CL_INVALID_COMMAND_QUEUE";
-    case CL_INVALID_HOST_PTR:
-      return "CL_INVALID_HOST_PTR";
-    case CL_INVALID_MEM_OBJECT:
-      return "CL_INVALID_MEM_OBJECT";
-    case CL_INVALID_IMAGE_FORMAT_DESCRIPTOR:
-      return "CL_INVALID_IMAGE_FORMAT_DESCRIPTOR";
-    case CL_INVALID_IMAGE_SIZE:
-      return "CL_INVALID_IMAGE_SIZE";
-    case CL_INVALID_SAMPLER:
-      return "CL_INVALID_SAMPLER";
-    case CL_INVALID_BINARY:
-      return "CL_INVALID_BINARY";
-    case CL_INVALID_BUILD_OPTIONS:
-      return "CL_INVALID_BUILD_OPTIONS";
-    case CL_INVALID_PROGRAM:
-      return "CL_INVALID_PROGRAM";
-    case CL_INVALID_PROGRAM_EXECUTABLE:
-      return "CL_INVALID_PROGRAM_EXECUTABLE";
-    case CL_INVALID_KERNEL_NAME:
-      return "CL_INVALID_KERNEL_NAME";
-    case CL_INVALID_KERNEL_DEFINITION:
-      return "CL_INVALID_KERNEL_DEFINITION";
-    case CL_INVALID_KERNEL:
-      return "CL_INVALID_KERNEL";
-    case CL_INVALID_ARG_INDEX:
-      return "CL_INVALID_ARG_INDEX";
-    case CL_INVALID_ARG_VALUE:
-      return "CL_INVALID_ARG_VALUE";
-    case CL_INVALID_ARG_SIZE:
-      return "CL_INVALID_ARG_SIZE";
-    case CL_INVALID_KERNEL_ARGS:
-      return "CL_INVALID_KERNEL_ARGS";
-    case CL_INVALID_WORK_DIMENSION:
-      return "CL_INVALID_WORK_DIMENSION";
-    case CL_INVALID_WORK_GROUP_SIZE:
-      return "CL_INVALID_WORK_GROUP_SIZE";
-    case CL_INVALID_WORK_ITEM_SIZE:
-      return "CL_INVALID_WORK_ITEM_SIZE";
-    case CL_INVALID_GLOBAL_OFFSET:
-      return "CL_INVALID_GLOBAL_OFFSET";
-    case CL_INVALID_EVENT_WAIT_LIST:
-      return "CL_INVALID_EVENT_WAIT_LIST";
-    case CL_INVALID_EVENT:
-      return "CL_INVALID_EVENT";
-    case CL_INVALID_OPERATION:
-      return "CL_INVALID_OPERATION";
-    case CL_INVALID_GL_OBJECT:
-      return "CL_INVALID_GL_OBJECT";
-    case CL_INVALID_BUFFER_SIZE:
-      return "CL_INVALID_BUFFER_SIZE";
-    case CL_INVALID_MIP_LEVEL:
-      return "CL_INVALID_MIP_LEVEL";
-    default:
-      return "Unknown OpenCL error code";
-  }
-}
-
-inline cl_channel_type DTypeToOpenCLChannelType(DLDataType data_type) {
-  DataType dtype(data_type);
-  if (dtype == DataType::Float(32)) {
-    return CL_FLOAT;
-  } else if (dtype == DataType::Float(16)) {
-    return CL_HALF_FLOAT;
-  } else if (dtype == DataType::Int(8)) {
-    return CL_SIGNED_INT8;
-  } else if (dtype == DataType::Int(16)) {
-    return CL_SIGNED_INT16;
-  } else if (dtype == DataType::Int(32)) {
-    return CL_SIGNED_INT32;
-  } else if (dtype == DataType::UInt(8)) {
-    return CL_UNSIGNED_INT8;
-  } else if (dtype == DataType::UInt(16)) {
-    return CL_UNSIGNED_INT16;
-  } else if (dtype == DataType::UInt(32)) {
-    return CL_UNSIGNED_INT32;
-  }
-  LOG(FATAL) << "data type is not supported in OpenCL runtime yet: " << dtype;
-  return CL_FLOAT;
-}
-
-/*!
- * \brief Protected OpenCL call
- * \param func Expression to call.
- */
-#define OPENCL_CHECK_ERROR(e) \
-  { ICHECK(e == CL_SUCCESS) << "OpenCL Error, code=" << e << ": " << cl::CLGetErrorString(e); }
-
-#define OPENCL_CALL(func)  \
-  {                        \
-    cl_int e = (func);     \
-    OPENCL_CHECK_ERROR(e); \
-  }
 
 class SYCLThreadEntry;
 
@@ -222,22 +102,22 @@ class SYCLWorkspace : public DeviceAPI {
  public:
   // type key
   std::string type_key;
-  // global platform id
-  cl_platform_id platform_id;
+  // global platform
+  sycl::platform platform;
   // global platform name
   std::string platform_name;
   // global context of this process
-  cl_context context{nullptr};
+  sycl::context context;
   // whether the workspace it initialized.
   bool initialized_{false};
   // the device type
   std::string device_type;
   // the devices
-  std::vector<cl_device_id> devices;
+  std::vector<sycl::device> devices;
   // the queues
-  std::vector<cl_command_queue> queues;
+  std::vector<sycl::queue> queues;
   // the events
-  std::vector<std::vector<cl_event>> events;
+  std::vector<std::vector<sycl::event>> events;
   // Number of registered kernels
   // Used to register kernel into the workspace.
   size_t num_registered_kernels{0};
@@ -247,16 +127,15 @@ class SYCLWorkspace : public DeviceAPI {
   std::vector<size_t> free_kernel_ids;
   // the mutex for initialization
   std::mutex mu;
-  //sycl add
-  sycl::device sycl_device;
-  sycl::context sycl_context;
-  sycl::queue default_queue;
+
 
   // destructor
   ~SYCLWorkspace() {
+    LOG(WARNING) << "todo, not support now";
+    /*
     if (context != nullptr) {
       OPENCL_CALL(clReleaseContext(context));
-    }
+    }*/
   }
   // Initialzie the device.
   void Init(const std::string& type_key, const std::string& device_type,
@@ -265,7 +144,7 @@ class SYCLWorkspace : public DeviceAPI {
   // Check whether the context is SYCL or not.
   virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLSYCL; }
   // get the queue of the device
-  cl_command_queue GetQueue(Device dev) {
+  sycl::queue GetQueue(Device dev) {
     ICHECK(IsSYCLDevice(dev));
     this->Init();
     ICHECK(dev.device_id >= 0 && static_cast<size_t>(dev.device_id) < queues.size())
@@ -273,22 +152,17 @@ class SYCLWorkspace : public DeviceAPI {
     return queues[dev.device_id];
   }
   // get the event queue of the context
-  std::vector<cl_event>& GetEventQueue(Device dev) {
+  std::vector<sycl::event>& GetEventQueue(Device dev) {
     ICHECK(IsSYCLDevice(dev));
     this->Init();
     ICHECK(dev.device_id >= 0 && static_cast<size_t>(dev.device_id) < queues.size())
         << "Invalid SYCL device_id=" << dev.device_id;
     return events[dev.device_id];
   }
-  // is current clCommandQueue in profiling mode
+  // is current syclQueue in profiling mode
   bool IsProfiling(Device dev) {
-    cl_command_queue queue = GetQueue(dev);
-    cl_command_queue_properties prop;
-
-    OPENCL_CALL(clGetCommandQueueInfo(queue, CL_QUEUE_PROPERTIES,
-                                      sizeof(cl_command_queue_properties), &prop, nullptr));
-
-    return prop & CL_QUEUE_PROFILING_ENABLE;
+    sycl::queue queue = GetQueue(dev);
+    return queue.has_property<sycl::property::queue::enable_profiling>();
   }
 
   // override device API
@@ -316,6 +190,7 @@ class SYCLWorkspace : public DeviceAPI {
   static SYCLWorkspace* Global();
 
   void CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) final;
+  std::vector<int> syclGetDeviceIDs(std::string device_type);
 };
 
 /*! \brief Thread local workspace */
@@ -323,8 +198,9 @@ class SYCLThreadEntry {
  public:
   // The kernel entry and version.
   struct KTEntry {
-    // The kernel handle.
-    cl_kernel kernel{nullptr};
+    // not support
+    std::string so_path;
+    void * so_handler = nullptr;
     // timestamp used to recognize stale kernel
     size_t version{0};
   };
@@ -342,7 +218,7 @@ class SYCLThreadEntry {
     device.device_id = 0;
     device.device_type = device_type;
   }
-  SYCLThreadEntry() : SYCLThreadEntry(kDLOpenCL, SYCLWorkspace::Global()) {}
+  SYCLThreadEntry() : SYCLThreadEntry(DLDeviceType(kDLSYCL), SYCLWorkspace::Global()) {}
 
   // get the global workspace
   static SYCLThreadEntry* ThreadLocal();
@@ -402,7 +278,7 @@ class SYCLModuleNode : public ModuleNode {
   /*!
    * \brief Get the global workspace
    */
-  virtual cl::SYCLWorkspace* GetGlobalWorkspace();
+  virtual syclT::SYCLWorkspace* GetGlobalWorkspace();
 
   const char* type_key() const final { return workspace_->type_key.c_str(); }
 
@@ -412,40 +288,39 @@ class SYCLModuleNode : public ModuleNode {
   std::string GetSource(const std::string& format) final;
   // Initialize the programs
   void Init();
-  // install a new kernel to thread local entry
-  cl_kernel InstallKernel(cl::SYCLWorkspace* w, cl::SYCLThreadEntry* t,
-                          const std::string& func_name, const KTRefEntry& e);
+  
 
  private:
   // The workspace, need to keep reference to use it in destructor.
   // In case of static destruction order problem.
-  cl::SYCLWorkspace* workspace_;
+  syclT::SYCLWorkspace* workspace_;
   // the binary data
   std::string data_;
   // The format
   std::string fmt_;
-  // function information table.
+  // function information table. Mapping from primitive name to .
   std::unordered_map<std::string, FunctionInfo> fmap_;
   // Module local mutex
   std::mutex build_lock_;
   // The SYCL source.
   std::string source_;
-  // Mapping from primitive name to cl program for each device.
-  std::unordered_map<std::string, std::vector<cl_program>> programs_;
-  // kernel id cache
+  // kernel id cache. Mapping from primitive name to KTRefEntry.
   std::unordered_map<std::string, KTRefEntry> kid_map_;
   // kernels build so far.
   std::vector<cl_kernel> kernels_;
-  // parsed kernel data
+  // parsed kernel data, Mapping from primitive name to kernel code.
   std::unordered_map<std::string, std::string> parsed_kernels_;
+  // share library handler
+  void * so_handler_ = nullptr;
 };
 
 /*! \brief SYCL timer node */
+/*
 class SYCLTimerNode : public TimerNode {
  public:
   // Timer start
   virtual void Start() {
-    cl::SYCLWorkspace::Global()->GetEventQueue(dev_).clear();
+    syclT::SYCLWorkspace::Global()->GetEventQueue(dev_).clear();
     this->duration = 0;
     // Very first call of Start() leads to the recreation of
     // SYCL command queue in profiling mode. This allows to run profile after inference.
@@ -453,10 +328,10 @@ class SYCLTimerNode : public TimerNode {
   }
   // Timer stop
   virtual void Stop() {
-    std::vector<cl_event> evt_queue = cl::SYCLWorkspace::Global()->GetEventQueue(dev_);
+    std::vector<cl_event> evt_queue = syclT::SYCLWorkspace::Global()->GetEventQueue(dev_);
     cl_ulong start, end;
-    if (cl::SYCLWorkspace::Global()->GetEventQueue(dev_).size() > 0) {
-      OPENCL_CALL(clWaitForEvents(1, &(cl::SYCLWorkspace::Global()->GetEventQueue(dev_).back())));
+    if (syclT::SYCLWorkspace::Global()->GetEventQueue(dev_).size() > 0) {
+      OPENCL_CALL(clWaitForEvents(1, &(syclT::SYCLWorkspace::Global()->GetEventQueue(dev_).back())));
       for (auto& kevt : evt_queue) {
         OPENCL_CALL(clGetEventProfilingInfo(kevt, CL_PROFILING_COMMAND_START, sizeof(cl_ulong),
                                             &start, nullptr));
@@ -485,27 +360,31 @@ class SYCLTimerNode : public TimerNode {
   Device dev_;
 
   void recreateCommandQueue() {
+    LOG(WARNING) << "todo, not support now";
+    
     cl_command_queue_properties prop;
-    if (!cl::SYCLWorkspace::Global()->IsProfiling(dev_)) {
+    if (!syclT::SYCLWorkspace::Global()->IsProfiling(dev_)) {
       prop = CL_QUEUE_PROFILING_ENABLE;
     } else {
       prop = 0;
     }
 
-    auto queue = cl::SYCLWorkspace::Global()->GetQueue(dev_);
+    auto queue = syclT::SYCLWorkspace::Global()->GetQueue(dev_);
 
     OPENCL_CALL(clFlush(queue));
     OPENCL_CALL(clFinish(queue));
     OPENCL_CALL(clReleaseCommandQueue(queue));
 
     cl_int err_code;
-    cl_device_id did = cl::SYCLWorkspace::Global()->devices[dev_.device_id];
+    sycl::device did = syclT::SYCLWorkspace::Global()->devices[dev_.device_id];
     auto profiling_queue =
-        clCreateCommandQueue(cl::SYCLWorkspace::Global()->context, did, prop, &err_code);
+        clCreateCommandQueue(syclT::SYCLWorkspace::Global()->context, did, prop, &err_code);
     OPENCL_CHECK_ERROR(err_code);
-    cl::SYCLWorkspace::Global()->queues[dev_.device_id] = profiling_queue;
+    syclT::SYCLWorkspace::Global()->queues[dev_.device_id] = profiling_queue;
+    
   }
 };
+*/
 }  // namespace runtime
 }  // namespace tvm
 #endif  // TVM_RUNTIME_SYCL_SYCL_COMMON_H_

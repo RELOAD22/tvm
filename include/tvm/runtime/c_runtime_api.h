@@ -88,12 +88,12 @@ typedef enum {
   kDLMicroDev = 13,
   kDLHexagon = 14,
   kDLWebGPU = 15,
-  kDLSYCL = 16,
+  // AddExtraTVMType which is not in DLPack here
+  kDLSYCL = 17,
   /*!
    * \brief SYCL CPU memory by sycl::malloc_host
    */
-  kDLSYCLHost = 17
-  // AddExtraTVMType which is not in DLPack here
+  kDLSYCLHost = 18,
 } TVMDeviceExtType;
 
 /*!
