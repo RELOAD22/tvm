@@ -28,6 +28,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <fstream>
 
 #include "../source_utils.h"
 #include "opencl_common.h"
@@ -211,6 +212,13 @@ void OpenCLModuleNode::Init() {
   // zero initialize cl_program pointers for each device kernel
   for (auto& kv : parsed_kernels_) {
     programs_.insert({kv.first, std::vector<cl_program>(workspace_->devices.size(), nullptr)});
+    std::string kernel_name = kv.first;
+    std::string kernel_code = kv.second;
+    std::string filepath = "/tmp/tvm_sycl/"+kernel_name+"_opencl.cpp";
+    std::ofstream myfile;
+    myfile.open(filepath);
+    myfile << kernel_code;
+    myfile.close();
   }
 }
 
