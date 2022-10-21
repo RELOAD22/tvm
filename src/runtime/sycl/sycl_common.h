@@ -50,7 +50,7 @@
  * files.  This also allows us to expose the OpenCL version through
  * tvm.runtime.Device.
  */
-#define CL_TARGET_OPENCL_VERSION 120
+// #define CL_TARGET_OPENCL_VERSION 120
 
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
