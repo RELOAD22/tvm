@@ -621,6 +621,8 @@ void CodeGenSYCL::VisitExpr_(const CallNode* op, std::ostream& os) {
         func = StringImm("exp");
       }else if(func->value == "powf"){
         func = StringImm("pow");
+      }else if(func->value == "tanhf"){
+        func = StringImm("tanh");
       }
       this->PrintCallExtern(GetType(GetRef<PrimExpr>(op)), func->value, op->args, true, os);
   } else {

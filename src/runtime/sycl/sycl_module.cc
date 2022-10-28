@@ -55,10 +55,10 @@ class SYCLWrappedFunc {
   void operator()(TVMArgs args, TVMRetValue* rv, void** void_args) const {
     VLOG(0) << "enter sycl wrapped func operator()";
     ICHECK(w_->devices.size() != 0) << "No SYCL device";
-    
+    // get kernel
     void (*kernel_func)(sycl::queue &Q, sycl::range<3> k0_dimGrid, sycl::range<3> k0_dimBlock, void** void_args) = (void (*)(sycl::queue &Q, sycl::range<3> k0_dimGrid, sycl::range<3> k0_dimBlock, void** void_args))dlsym(so_handler_, func_name_.c_str());
     ICHECK(kernel_func != NULL) << "ERROR:"<<dlerror()<<":dlsym\n";
-
+    // get thread dimension
     ThreadWorkLoad wl = launch_param_config_.Extract(args);
     sycl::range<3> k0_dimGrid(wl.grid_dim(0), wl.grid_dim(1), wl.grid_dim(2));
     sycl::range<3> k0_dimBlock(wl.block_dim(0), wl.block_dim(1), wl.block_dim(2));
