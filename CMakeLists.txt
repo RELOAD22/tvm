@@ -11,6 +11,8 @@ include(cmake/utils/FindVulkan.cmake)
 include(cmake/utils/FindLLVM.cmake)
 include(cmake/utils/FindROCM.cmake)
 include(cmake/utils/FindEthosN.cmake)
+include(cmake/utils/FindSYCL.cmake)
+
 
 if(EXISTS ${CMAKE_CURRENT_BINARY_DIR}/config.cmake)
   include(${CMAKE_CURRENT_BINARY_DIR}/config.cmake)
@@ -29,6 +31,7 @@ tvm_option(USE_OPENCL "Build with OpenCL" OFF)
 tvm_option(USE_OPENCL_GTEST "Path to OpenCL specific gtest version for runtime cpp tests." /path/to/opencl/gtest)
 tvm_option(USE_VULKAN "Build with Vulkan" OFF)
 tvm_option(USE_SYCL "Build with SYCL" OFF)
+tvm_option(USE_SYCL_GTEST "Path to SYCL specific gtest version for runtime cpp tests." "/home/wzy/app/googletest-build-release-1.10")
 
 
 # Whether to use spirv-tools.and SPIRV-Headers from Khronos github or gitlab.
@@ -424,12 +427,17 @@ if(USE_GTEST)
   set(GTEST_ROOT "$ENV{GTEST_LIB}")
   if("${USE_GTEST}" STREQUAL "AUTO")
     # If USE_GTEST is AUTO, treat GTest as optional: enable if found.
-    find_package(GTest)
+    find_package(GTest REQUIRED NO_DEFAULT_PATH HINTS /home/wzy/app/googletest-build-release-1.10 )
+    message(STATUS "gtest include path is ${GTest_INCLUDE_DIRS}")
+    message(STATUS "gtest library path is ${GTEST_LIBS}")
   elseif("${USE_GTEST}" MATCHES ${IS_TRUE_PATTERN})
     # USE_GTEST is set to ON, TRUE, etc. Treat GTest as a required package.
-    find_package(GTest REQUIRED)
+    find_package(GTest REQUIRED NO_DEFAULT_PATH HINTS "/home/wzy/app/googletest-build-release-1.10" )
+    message(STATUS "gtest include path is ${GTest_INCLUDE_DIRS}")
+    message(STATUS "gtest library path is ${GTEST_LIBS}")
   endif()
   if(GTEST_FOUND)
+    message(STATUS "found gtest")
     if(NOT TARGET GTest::gmock)
       # GMock is formally supported in CMake 3.20; for now, expect libgmock.a in the same directory,
       # and require that folks compiling against GTest::gmock also link against GTest::GTest
@@ -639,6 +647,19 @@ if(USE_OPENCL AND DEFINED USE_OPENCL_GTEST AND EXISTS ${USE_OPENCL_GTEST})
   include_directories("${USE_OPENCL_GTEST}/include")
   include_directories("${USE_OPENCL_GTEST}/googletest/include")
   message(STATUS "Found OpenCL gtest at ${USE_OPENCL_GTEST}")
+endif()
+
+
+if(USE_SYCL AND DEFINED USE_SYCL_GTEST AND EXISTS ${USE_SYCL_GTEST})
+  include(FetchContent)
+  FetchContent_Declare(googletest SOURCE_DIR "${USE_SYCL_GTEST}")
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  target_link_libraries(tvm_runtime PUBLIC gtest gtest_main)
+  target_link_libraries(tvm PUBLIC gtest gtest_main)
+  include_directories("${USE_SYCL_GTEST}/include")
+  include_directories("${USE_SYCL_GTEST}/googletest/include")
+  message(STATUS "Found SYCL gtest at ${USE_SYCL_GTEST}")
 endif()
 
 # Set flags for clang

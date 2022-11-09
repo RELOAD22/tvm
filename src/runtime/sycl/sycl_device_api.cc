@@ -23,6 +23,7 @@
 #include <dmlc/thread_local.h>
 #include <tvm/runtime/profiling.h>
 #include <tvm/runtime/registry.h>
+#include <CL/sycl.hpp>
 
 #include "sycl_common.h"
 
@@ -30,8 +31,8 @@ namespace tvm {
 namespace runtime {
 namespace syclT {
 
-std::string syclGetPlatformInfo(cl_platform_id pid, cl_platform_info param_name);
-std::string syclGetDeviceInfo(cl_device_id pid, cl_device_info param_name);
+std::string syclGetPlatformInfo(cl_platform_id pid, pi_platform_info param_name);
+std::string syclGetDeviceInfo(cl_platform_id pid, pi_platform_info param_name);
 
 struct ImageInfo {
   size_t origin[3] = {};
@@ -251,12 +252,12 @@ typedef dmlc::ThreadLocalStore<SYCLThreadEntry> SYCLThreadStore;
 
 SYCLThreadEntry* SYCLThreadEntry::ThreadLocal() { return SYCLThreadStore::Get(); }
 
-std::string syclGetPlatformInfo(cl_platform_id pid, cl_platform_info param_name) {
+std::string syclGetPlatformInfo(cl_platform_id pid, pi_platform_info param_name) {
   LOG(WARNING) << "todo, not support now";
   return "";
 }
 
-std::string syclGetDeviceInfo(cl_device_id pid, cl_device_info param_name) {
+std::string syclGetDeviceInfo(cl_device_id pid, pi_device_info param_name) {
   LOG(WARNING) << "todo, not support now";
   return "";
 }
@@ -317,7 +318,8 @@ void SYCLWorkspace::Init(const std::string& type_key, const std::string& device_
     LOG(WARNING) << "No CUDA device";
     return;
   }
-  //create context、queues
+
+  //create context queues
   this->context = sycl::context(this->platform);
 
   auto exception_handler = [](sycl::exception_list exceptions) {

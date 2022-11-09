@@ -16,26 +16,56 @@
 # under the License.
 
 
+# if(USE_SYCL)
+#   message(STATUS "Build with SYCL support")
+#   message(STATUS "FOUND CMAKE_PREFIX_PATH : " ${CMAKE_PREFIX_PATH})
+#   message(STATUS "FOUND CMAKE_FRAMEWORK_PATH : " ${CMAKE_FRAMEWORK_PATH})
+#   message(STATUS "FOUND CMAKE_APPBUNDLE_PATH : " ${CMAKE_APPBUNDLE_PATH})
+#   message(STATUS "FOUND PATH : " ${PATH})
+#   tvm_file_glob(GLOB RUNTIME_SYCL_SRCS src/runtime/sycl/*.cc)
+#   list(APPEND SYCL_RUNTIME_SRCS ${RUNTIME_SYCL_SRCS})
+#   if($ENV{SYCL_ROOT_DIR})
+#     include_directories(BEFORE SYSTEM $ENV{SYCL_ROOT_DIR}/include/sycl/)
+#     list(APPEND TVM_RUNTIME_LINKER_LIBS $ENV{SYCL_ROOT_DIR}/lib/)
+#   else()
+#     # set(SYCL_DIR "/home/wzy/sycl_workspace/build-cuda")
+#     set(SYCL_DIR "/home/wzy/sycl_workspace/tvm-sycl-build-cuda")
+#     message(STATUS "FOUND SYCL_DIR : " ${SYCL_DIR})
+#     include_directories(BEFORE SYSTEM ${SYCL_DIR}/include/sycl/)
+#     list(APPEND TVM_RUNTIME_LINKER_LIBS ${SYCL_DIR}/lib/)
+#   endif()
+#   # include_directories(BEFORE SYSTEM $ENV{SYCL_ROOT_DIR}/include/sycl/)
+#   # list(APPEND TVM_RUNTIME_LINKER_LIBS $ENV{SYCL_ROOT_DIR}/lib/)
+# else()
+#   list(APPEND COMPILER_SRCS src/target/opt/build_sycl_off.cc)
+# endif(USE_SYCL)
+
+
+
+# SYCL Module
+find_sycl(${USE_SYCL})
+
+if(SYCL_FOUND)
+  # always set the includedir when cuda is available
+  # avoid global retrigger of cmake
+  include_directories(SYSTEM ${SYCL_INCLUDE_DIRS})
+endif(SYCL_FOUND)
+
 if(USE_SYCL)
-  message(STATUS "Build with SYCL support")
-  message(STATUS "FOUND CMAKE_PREFIX_PATH : " ${CMAKE_PREFIX_PATH})
-  message(STATUS "FOUND CMAKE_FRAMEWORK_PATH : " ${CMAKE_FRAMEWORK_PATH})
-  message(STATUS "FOUND CMAKE_APPBUNDLE_PATH : " ${CMAKE_APPBUNDLE_PATH})
-  message(STATUS "FOUND PATH : " ${PATH})
-  tvm_file_glob(GLOB RUNTIME_SYCL_SRCS src/runtime/sycl/*.cc)
-  list(APPEND SYCL_RUNTIME_SRCS ${RUNTIME_SYCL_SRCS})
-  if($ENV{SYCL_ROOT_DIR})
-    include_directories(BEFORE SYSTEM $ENV{SYCL_ROOT_DIR}/include/sycl/)
-    list(APPEND TVM_RUNTIME_LINKER_LIBS $ENV{SYCL_ROOT_DIR}/lib/)
-  else()
-    # set(SYCL_DIR "/home/wzy/sycl_workspace/build-cuda")
-    set(SYCL_DIR "/home/wzy/sycl_workspace/tvm-sycl-build-cuda")
-    message(STATUS "FOUND SYCL_DIR : " ${SYCL_DIR})
-    include_directories(BEFORE SYSTEM ${SYCL_DIR}/include/sycl/)
-    list(APPEND TVM_RUNTIME_LINKER_LIBS ${SYCL_DIR}/lib/)
+  if (NOT SYCL_FOUND)
+    find_package(SYCL REQUIRED)
   endif()
-  # include_directories(BEFORE SYSTEM $ENV{SYCL_ROOT_DIR}/include/sycl/)
-  # list(APPEND TVM_RUNTIME_LINKER_LIBS $ENV{SYCL_ROOT_DIR}/lib/)
+  message(STATUS "Build with SYCL support")
+  tvm_file_glob(GLOB RUNTIME_SYCL_SRCS src/runtime/sycl/*.cc)
+  list(APPEND TVM_RUNTIME_LINKER_LIBS ${SYCL_LIBRARIES})
+
+  if(DEFINED USE_SYCL_GTEST AND EXISTS ${USE_SYCL_GTEST})
+    file_glob_append(RUNTIME_SYCL_SRCS
+      "${CMAKE_SOURCE_DIR}/tests/cpp-runtime/sycl/*.cc"
+    )
+  endif()
+  list(APPEND SYCL_RUNTIME_SRCS ${RUNTIME_SYCL_SRCS})
 else()
   list(APPEND COMPILER_SRCS src/target/opt/build_sycl_off.cc)
 endif(USE_SYCL)
+
