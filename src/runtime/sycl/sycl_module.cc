@@ -82,6 +82,8 @@ class SYCLWrappedFunc {
   SYCLModuleNode* m_;
   // resource handle
   ObjectPtr<Object> sptr_;
+  // global kernel id in the kernel table.
+  SYCLModuleNode::KTRefEntry entry_;
   // The name of the function.
   std::string func_name_;
   // convert code for void argument
@@ -104,6 +106,7 @@ SYCLModuleNode::~SYCLModuleNode() {
     }
   }
   // free the kernels
+  
 }
 
 syclT::SYCLWorkspace* SYCLModuleNode::GetGlobalWorkspace() {

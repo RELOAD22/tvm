@@ -47,24 +47,24 @@ struct ImageInfo {
  * \param desc Descriptor which contains the buffer and layout tag.
  * \param The DLTensor used to infer the tensors physical shape.
  */
-ImageInfo syclGetImageInfo(const syclT::syclBufferDescriptor* desc, const DLTensor* tensor) {
+ImageInfo syclGetImageInfo(const syclBufferDescriptor* desc, const DLTensor* tensor) {
   ImageInfo info{};
   LOG(WARNING) << "todo, not support now";
   return info;
 }
 
-syclT::syclBufferDescriptor::MemoryLayout syclT::syclBufferDescriptor::MemoryLayoutFromScope(
+syclBufferDescriptor::MemoryLayout syclBufferDescriptor::MemoryLayoutFromScope(
     Optional<String> mem_scope) {
   LOG(WARNING) << "todo, not support now";
-  return syclT::syclBufferDescriptor::MemoryLayout::kBuffer1D;
+  return syclBufferDescriptor::MemoryLayout::kBuffer1D;
 }
 
-String syclT::syclBufferDescriptor::ScopeFromMemoryLayout(syclT::syclBufferDescriptor::MemoryLayout layout) {
+String syclBufferDescriptor::ScopeFromMemoryLayout(syclBufferDescriptor::MemoryLayout layout) {
   LOG(WARNING) << "todo, not support now";
   return "";
 }
 
-SYCLThreadEntry* SYCLWorkspace::GetThreadEntry() { return syclT::SYCLThreadEntry::ThreadLocal(); }
+SYCLThreadEntry* SYCLWorkspace::GetThreadEntry() { return SYCLThreadEntry::ThreadLocal(); }
 
 SYCLWorkspace* SYCLWorkspace::Global() {
   static SYCLWorkspace* inst = new SYCLWorkspace();
@@ -100,7 +100,7 @@ void* SYCLWorkspace::AllocDataSpace(Device dev, int ndim, const int64_t* shape, 
 
   LOG(WARNING) << "todo, not support now";
   /*
-  syclT::syclBufferDescriptor* desc = new syclT::syclBufferDescriptor(mem_scope);
+  syclBufferDescriptor* desc = new syclBufferDescriptor(mem_scope);
   size_t axis = DefaultTextureLayoutSeparator(ndim, mem_scope.value());
   auto texture = ApplyTexture2DFlattening<int64_t>(shape, ndim, axis);
   desc->buffer = AllocTexture(dev, texture.width, texture.height, dtype);
@@ -123,7 +123,7 @@ void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
   /*
   OPENCL_CALL(clFinish(this->GetQueue(dev)));
 
-  syclT::syclBufferDescriptor* desc = static_cast<syclT::syclBufferDescriptor*>(ptr);
+  syclBufferDescriptor* desc = static_cast<syclBufferDescriptor*>(ptr);
   OPENCL_CALL(clReleaseMemObject(desc->buffer));
   delete desc;
   */
@@ -160,20 +160,23 @@ void SYCLWorkspace::FreeTextureWorkspace(Device dev, void* ptr) {
 void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) {
   size_t from_size = GetDataSize(*from);
   size_t to_size = GetDataSize(*to);
+  ICHECK_EQ(from_size, to_size);
+  ICHECK(IsContiguous(*from) && IsContiguous(*to))
+      << "CopyDataFromTo only support contiguous array for now";
   char* from_data = (char*)from->data;
   size_t from_offset = from->byte_offset;
-  from_data += from_offset;
+  // from_data += from_offset;
   char* to_data = (char*)to->data;
   size_t to_offset = to->byte_offset;
-  to_data += to_offset;
+  // to_data += to_offset;
 
   ICHECK(from_size == to_size) << "TVMArrayCopyFromTo: The size must exactly match";
   if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)){
-    this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait();
+    SYCL_CALL(this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait());
   }else if (IsSYCLDevice(from->device) && to->device.device_type == kDLCPU){
-    this->GetQueue(from->device).memcpy(to_data, from_data, from_size).wait();
+    SYCL_CALL(this->GetQueue(from->device).memcpy(to_data, from_data, from_size).wait());
   }else if (from->device.device_type == kDLCPU && IsSYCLDevice(to->device)){
-    this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait();
+    SYCL_CALL(this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait());
     //std::cout<<"CopyData: cpu->sycl"<<std::endl;
   }else {
     LOG(FATAL) << "Expect copy from/to SYCL or between SYCL";
@@ -181,24 +184,24 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
 
   /*
   if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)) {
-    const auto* from_desc = static_cast<const syclT::syclBufferDescriptor*>(from->data);
-    ICHECK(from_desc->layout == syclT::syclBufferDescriptor::MemoryLayout::kBuffer1D)
+    const auto* from_desc = static_cast<const syclBufferDescriptor*>(from->data);
+    ICHECK(from_desc->layout == syclBufferDescriptor::MemoryLayout::kBuffer1D)
         << "Device to device copying is currently only implemented for SYCL buffer storage";
-    auto* to_desc = static_cast<syclT::syclBufferDescriptor*>(to->data);
+    auto* to_desc = static_cast<syclBufferDescriptor*>(to->data);
     OPENCL_CALL(clEnqueueCopyBuffer(this->GetQueue(to->device), from_desc->buffer, to_desc->buffer,
                                     from->byte_offset, to->byte_offset, nbytes, 0, nullptr,
                                     nullptr));
   } else if (IsSYCLDevice(from->device) && to->device.device_type == kDLCPU) {
-    const auto* from_desc = static_cast<const syclT::syclBufferDescriptor*>(from->data);
+    const auto* from_desc = static_cast<const syclBufferDescriptor*>(from->data);
     switch (from_desc->layout) {
-      case syclT::syclBufferDescriptor::MemoryLayout::kBuffer1D:
+      case syclBufferDescriptor::MemoryLayout::kBuffer1D:
         OPENCL_CALL(clEnqueueReadBuffer(
             this->GetQueue(from->device), from_desc->buffer, CL_FALSE, from->byte_offset, nbytes,
             static_cast<char*>(to->data) + to->byte_offset, 0, nullptr, nullptr));
         break;
-      case syclT::syclBufferDescriptor::MemoryLayout::kImage2DActivation:
-      case syclT::syclBufferDescriptor::MemoryLayout::kImage2DWeight:
-      case syclT::syclBufferDescriptor::MemoryLayout::kImage2DNHWC:
+      case syclBufferDescriptor::MemoryLayout::kImage2DActivation:
+      case syclBufferDescriptor::MemoryLayout::kImage2DWeight:
+      case syclBufferDescriptor::MemoryLayout::kImage2DNHWC:
         auto image_info = syclGetImageInfo(from_desc, from);
         // TODO(csullivan): Support calculating row_pitch correctly in the case of reuse.
         // Note that when utilizing texture pools for memory reuse, the allocated image
@@ -211,16 +214,16 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
     }
     OPENCL_CALL(clFinish(this->GetQueue(from->device)));
   } else if (from->device.device_type == kDLCPU && IsSYCLDevice(to->device)) {
-    auto* to_desc = static_cast<syclT::syclBufferDescriptor*>(to->data);
+    auto* to_desc = static_cast<syclBufferDescriptor*>(to->data);
     switch (to_desc->layout) {
-      case syclT::syclBufferDescriptor::MemoryLayout::kBuffer1D:
+      case syclBufferDescriptor::MemoryLayout::kBuffer1D:
         OPENCL_CALL(clEnqueueWriteBuffer(
             this->GetQueue(to->device), to_desc->buffer, CL_FALSE, to->byte_offset, nbytes,
             static_cast<const char*>(from->data) + from->byte_offset, 0, nullptr, nullptr));
         break;
-      case syclT::syclBufferDescriptor::MemoryLayout::kImage2DActivation:
-      case syclT::syclBufferDescriptor::MemoryLayout::kImage2DWeight:
-      case syclT::syclBufferDescriptor::MemoryLayout::kImage2DNHWC:
+      case syclBufferDescriptor::MemoryLayout::kImage2DActivation:
+      case syclBufferDescriptor::MemoryLayout::kImage2DWeight:
+      case syclBufferDescriptor::MemoryLayout::kImage2DNHWC:
         auto image_info = syclGetImageInfo(to_desc, to);
         OPENCL_CALL(clEnqueueWriteImage(
             this->GetQueue(to->device), to_desc->buffer, CL_FALSE, image_info.origin,
@@ -393,6 +396,6 @@ TVM_REGISTER_GLOBAL("profiling.timer.sycl").set_body_typed([](Device dev) {
 });
 #endif
 
-}  // namespace cl
+}  // namespace sycl
 }  // namespace runtime
 }  // namespace tvm
