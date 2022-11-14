@@ -238,6 +238,8 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
 }
 
 void SYCLWorkspace::StreamSync(Device dev, TVMStreamHandle stream) {
+  ICHECK(stream == nullptr);
+  SYCL_CALL(this->GetQueue(dev).wait_and_throw());
   /*
   ICHECK(stream == nullptr);
   OPENCL_CALL(clFinish(this->GetQueue(dev)));*/
@@ -272,7 +274,7 @@ std::vector<int> SYCLWorkspace::syclGetDeviceIDs(std::string device_type) {
   if (device_type == "gpu") dtype = sycl::info::device_type::gpu;
   if (device_type == "accelerator") dtype = sycl::info::device_type::accelerator;
   std::vector<int> device_ids;
-  for(int id=0; id<this->devices.size(); id++){
+  for(int id = 0; id<this->devices.size(); id++){
     if(this->devices[id].get_info<sycl::info::device::device_type>() == dtype){
       device_ids.push_back(id);
     }

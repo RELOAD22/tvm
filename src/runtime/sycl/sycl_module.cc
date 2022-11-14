@@ -209,7 +209,10 @@ void SYCLModuleNode::Init() {
   kernels_file.open(filepath);
   kernels_file << GetSource("sycl");
   kernels_file.close();
-  std::string cmd = "$DPCPP_HOME/tvm-sycl-build-cuda-debug/bin/clang++ -std=c++17 -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -fPIC -shared "+filepath+" -o "+sharedlibpath;
+  std::string sycl_compiler(SYCL_CXX_COMPILER);
+  std::string sycl_flags(SYCL_FLAGS);
+  std::string cmd = sycl_compiler +" "+sycl_flags +" "+ filepath+" -o "+sharedlibpath;
+  // std::string cmd = "$DPCPP_HOME/tvm-sycl-build-cuda-debug/bin/clang++ -std=c++17 -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -fPIC -shared "+filepath+" -o "+sharedlibpath;
   // std::string cmd = "$DPCPP_HOME/build-cuda/bin/clang++ -std=c++17 -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -w -fPIC -shared "+filepath+" -o "+sharedlibpath;
   // std::string cmd = "$DPCPP_HOME/llvm/build/bin/clang++ -std=c++17 -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -fPIC -shared "+filepath+" -o "+sharedlibpath;
   system(cmd.c_str());
