@@ -81,8 +81,12 @@ void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
 void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
                                       DLDataType type_hint) {
   this->Init();
-  VLOG(1) << "allocating " << size << "bytes share memory";
+  VLOG(1) << "sycl device allocating " << size << " bytes share memory";
+  VLOG(1) << "alloc sycl device id is " << dev.device_id << std::endl;
+  VLOG(1) << "alloc sycl device type is " << dev.device_type << std::endl;
+  VLOG(1) << "alloc sycl device alignment is " << alignment << std::endl;
   void* ret = sycl::malloc_shared(size, this->devices[dev.device_id], this->context);
+  VLOG(1) << "alloc sycl device pointer address is " << ret << std::endl;
   return ret;
 }
 
@@ -111,12 +115,22 @@ void* SYCLWorkspace::AllocDataSpace(Device dev, int ndim, const int64_t* shape, 
 
 void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
   //std::cout<<dev.device_type<<std::endl;
-  if(IsSYCLDevice(dev)){
-    sycl::queue queue = this->GetQueue(dev);
-    sycl::free(ptr, queue);
+  if(!IsSYCLDevice(dev) && !IsSYCLHostDevice(dev)){
+    VLOG(1) << "free not sycl device : "<<dev.device_type;
+    LOG(WARNING) << "free not sycl device:"<<dev.device_type;
+    return ;
+  }else if(IsSYCLHostDevice(dev)){
+    VLOG(1) << "free sycl host id is " << dev.device_id << std::endl;
+    VLOG(1) << "free sycl host type is " << dev.device_type << std::endl;
+    VLOG(1) << "free sycl host pointer address is " << ptr << std::endl;
   }else{
-    LOG(WARNING) << "not sycl device:"<<dev.device_type;
+    //IsSYCLDevice(dev) == true
+    VLOG(1) << "free sycl device id is " << dev.device_id << std::endl;
+    VLOG(1) << "free sycl device type is " << dev.device_type << std::endl;
+    VLOG(1) << "free sycl device pointer address is " << ptr << std::endl;
   }
+  sycl::queue queue = this->GetQueue(dev);
+  sycl::free(ptr, queue);
   
   // We have to make sure that the memory object is not in the command queue
   // for some OpenCL platforms.

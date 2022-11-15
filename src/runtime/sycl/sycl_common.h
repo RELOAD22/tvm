@@ -143,6 +143,7 @@ class SYCLWorkspace : public DeviceAPI {
   virtual void Init() { Init("sycl", "gpu"); }
   // Check whether the context is SYCL or not.
   virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLSYCL; }
+  virtual bool IsSYCLHostDevice(Device dev) {return dev.device_type == kDLSYCLHost;}
   // get the queue of the device
   sycl::queue GetQueue(Device dev) {
     ICHECK(IsSYCLDevice(dev));

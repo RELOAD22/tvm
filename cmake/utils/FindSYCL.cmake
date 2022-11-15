@@ -53,6 +53,10 @@ macro(find_sycl use_sycl)
      endif()
      # we are in the section dedicated to the explicit pointing of SYCL SDK path, we must not
      # look for the SYCL library by default path, but should be limited by provided SDK
+     set(CMAKE_BUILD_RPATH "${__sycl_sdk}/lib;${CMAKE_BUILD_RPATH}")
+     message(STATUS "set sycl lib directory in cmake build rpath : ${__sycl_sdk}/lib ")
+     link_directories(${__sycl_sdk}/lib)
+     message(STATUS "set sycl link_directories : ${__sycl_sdk}/lib ")
      find_library(SYCL_LIBRARIES NAMES sycl NO_DEFAULT_PATH PATHS ${__sycl_sdk}/lib ${__sycl_sdk}/lib64 ${__sycl_sdk}/lib/x64/)
      message(STATUS "SYCL_LIBRARIES=" ${SYCL_LIBRARIES})
      if(SYCL_LIBRARIES)
