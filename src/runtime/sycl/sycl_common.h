@@ -144,6 +144,30 @@ class SYCLWorkspace : public DeviceAPI {
   // Check whether the context is SYCL or not.
   virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLSYCL; }
   virtual bool IsSYCLHostDevice(Device dev) {return dev.device_type == kDLSYCLHost;}
+  std::string GetDataType(DLDataType dtype){
+    uint8_t type = dtype.code;
+//  *  Examples
+//  *   - float: type_code = 2, bits = 32, lanes=1
+//  *   - float4(vectorized 4 float): type_code = 2, bits = 32, lanes=4
+//  *   - int8: type_code = 0, bits = 8, lanes=1
+//  *   - std::complex<float>: type_code = 5, bits = 64, lanes = 1
+    switch(type){
+      case kDLInt:
+           return "int";
+      case kDLUInt:
+           return "unsigned int";
+      case kDLFloat:
+            return "float";
+      case kDLOpaqueHandle:
+            return "void *";
+      case kDLBfloat:
+            return "float16";
+      case kDLComplex:
+            return "complex<float>";
+      default:
+          return "unknown type";
+    }
+  }
   // get the queue of the device
   sycl::queue GetQueue(Device dev) {
     ICHECK(IsSYCLDevice(dev));
@@ -256,7 +280,7 @@ struct syclBufferDescriptor {
   cl_mem buffer{nullptr};
   MemoryLayout layout{MemoryLayout::kBuffer1D};
 };
-}  // namespace cl
+}  // namespace syclT
 
 // Module to support thread-safe multi-device execution.
 // SYCL runtime is a bit tricky because clSetKernelArg is not thread-safe

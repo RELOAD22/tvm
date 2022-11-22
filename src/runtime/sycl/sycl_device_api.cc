@@ -78,6 +78,7 @@ void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
   LOG(WARNING) << "todo, not support now";
 }
 
+
 void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
                                       DLDataType type_hint) {
   this->Init();
@@ -85,7 +86,10 @@ void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
   VLOG(1) << "alloc sycl device id is " << dev.device_id << std::endl;
   VLOG(1) << "alloc sycl device type is " << dev.device_type << std::endl;
   VLOG(1) << "alloc sycl device alignment is " << alignment << std::endl;
-  void* ret = sycl::malloc_shared(size, this->devices[dev.device_id], this->context);
+  // void* ret = sycl::malloc_shared(size, this->devices[dev.device_id], this->context);
+  void* ret = sycl::aligned_alloc_shared(alignment,size,this->devices[dev.device_id],this->context);
+  if(ret == nullptr)
+    LOG(ERROR) << "allgn alloc memory failure!"<<std::endl;
   VLOG(1) << "alloc sycl device pointer address is " << ret << std::endl;
   return ret;
 }
@@ -119,7 +123,7 @@ void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
     VLOG(1) << "free not sycl device : "<<dev.device_type;
     LOG(WARNING) << "free not sycl device:"<<dev.device_type;
     return ;
-  }else if(IsSYCLHostDevice(dev)){
+  }else if(IsSYCLHostDevice(dev) ){
     VLOG(1) << "free sycl host id is " << dev.device_id << std::endl;
     VLOG(1) << "free sycl host type is " << dev.device_type << std::endl;
     VLOG(1) << "free sycl host pointer address is " << ptr << std::endl;
@@ -177,86 +181,48 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
   ICHECK_EQ(from_size, to_size);
   ICHECK(IsContiguous(*from) && IsContiguous(*to))
       << "CopyDataFromTo only support contiguous array for now";
-  char* from_data = (char*)from->data;
+  if (from->device.device_type == kDLCUDAHost) {
+    from->device.device_type = kDLCPU;
+  }
+  if (to->device.device_type == kDLCUDAHost) {
+    to->device.device_type = kDLCPU;
+  }
   size_t from_offset = from->byte_offset;
-  // from_data += from_offset;
-  char* to_data = (char*)to->data;
   size_t to_offset = to->byte_offset;
-  // to_data += to_offset;
+  VLOG(1) << "from device " << from->device.device_id << " type : "<< from->device.device_type<<std::endl;
+  VLOG(1) << "to device " << to->device.device_id << " type : "<< to->device.device_type<<std::endl;
+
+  VLOG(1) << "before convert from device data pointer address : " << from->data << std::endl;
+  VLOG(1) << "before convert to device data pointer address : " << to->data << std::endl;
+  const auto* from_data = static_cast<const uint64_t*>(from->data) + from->byte_offset;
+  auto* to_data = static_cast<uint64_t*>(to->data) + to->byte_offset;
 
   ICHECK(from_size == to_size) << "TVMArrayCopyFromTo: The size must exactly match";
+
+  VLOG(1) << "after convert from device data pointer address : " << from_data << std::endl;
+  VLOG(1) << "after convert to device data pointer address : " << to_data << std::endl;
   if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)){
-    SYCL_CALL(this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait());
+    auto queue = this->GetQueue(to->device);
+    auto event = queue.memcpy(to_data,from_data,from_size);
+    SYCL_CALL(event.wait());
   }else if (IsSYCLDevice(from->device) && to->device.device_type == kDLCPU){
-    SYCL_CALL(this->GetQueue(from->device).memcpy(to_data, from_data, from_size).wait());
+    auto queue = this->GetQueue(to->device);
+    auto event = queue.memcpy(to_data,from_data,from_size);
+    SYCL_CALL(event.wait());
+    // SYCL_CALL(this->GetQueue(from->device).memcpy(to_data, from_data, from_size).wait());
   }else if (from->device.device_type == kDLCPU && IsSYCLDevice(to->device)){
-    SYCL_CALL(this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait());
-    //std::cout<<"CopyData: cpu->sycl"<<std::endl;
+    auto queue = this->GetQueue(to->device);
+    auto event = queue.memcpy(to_data,from_data,from_size);
+    SYCL_CALL(event.wait());
+    // SYCL_CALL(this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait());
   }else {
     LOG(FATAL) << "Expect copy from/to SYCL or between SYCL";
   }
-
-  /*
-  if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)) {
-    const auto* from_desc = static_cast<const syclBufferDescriptor*>(from->data);
-    ICHECK(from_desc->layout == syclBufferDescriptor::MemoryLayout::kBuffer1D)
-        << "Device to device copying is currently only implemented for SYCL buffer storage";
-    auto* to_desc = static_cast<syclBufferDescriptor*>(to->data);
-    OPENCL_CALL(clEnqueueCopyBuffer(this->GetQueue(to->device), from_desc->buffer, to_desc->buffer,
-                                    from->byte_offset, to->byte_offset, nbytes, 0, nullptr,
-                                    nullptr));
-  } else if (IsSYCLDevice(from->device) && to->device.device_type == kDLCPU) {
-    const auto* from_desc = static_cast<const syclBufferDescriptor*>(from->data);
-    switch (from_desc->layout) {
-      case syclBufferDescriptor::MemoryLayout::kBuffer1D:
-        OPENCL_CALL(clEnqueueReadBuffer(
-            this->GetQueue(from->device), from_desc->buffer, CL_FALSE, from->byte_offset, nbytes,
-            static_cast<char*>(to->data) + to->byte_offset, 0, nullptr, nullptr));
-        break;
-      case syclBufferDescriptor::MemoryLayout::kImage2DActivation:
-      case syclBufferDescriptor::MemoryLayout::kImage2DWeight:
-      case syclBufferDescriptor::MemoryLayout::kImage2DNHWC:
-        auto image_info = syclGetImageInfo(from_desc, from);
-        // TODO(csullivan): Support calculating row_pitch correctly in the case of reuse.
-        // Note that when utilizing texture pools for memory reuse, the allocated image
-        // size can be larger than the size to be read.
-        OPENCL_CALL(clEnqueueReadImage(
-            this->GetQueue(from->device), from_desc->buffer, CL_FALSE, image_info.origin,
-            image_info.region, image_info.row_pitch, image_info.slice_pitch,
-            static_cast<char*>(to->data) + to->byte_offset, 0, nullptr, nullptr));
-        break;
-    }
-    OPENCL_CALL(clFinish(this->GetQueue(from->device)));
-  } else if (from->device.device_type == kDLCPU && IsSYCLDevice(to->device)) {
-    auto* to_desc = static_cast<syclBufferDescriptor*>(to->data);
-    switch (to_desc->layout) {
-      case syclBufferDescriptor::MemoryLayout::kBuffer1D:
-        OPENCL_CALL(clEnqueueWriteBuffer(
-            this->GetQueue(to->device), to_desc->buffer, CL_FALSE, to->byte_offset, nbytes,
-            static_cast<const char*>(from->data) + from->byte_offset, 0, nullptr, nullptr));
-        break;
-      case syclBufferDescriptor::MemoryLayout::kImage2DActivation:
-      case syclBufferDescriptor::MemoryLayout::kImage2DWeight:
-      case syclBufferDescriptor::MemoryLayout::kImage2DNHWC:
-        auto image_info = syclGetImageInfo(to_desc, to);
-        OPENCL_CALL(clEnqueueWriteImage(
-            this->GetQueue(to->device), to_desc->buffer, CL_FALSE, image_info.origin,
-            image_info.region, image_info.row_pitch, image_info.slice_pitch,
-            static_cast<const char*>(from->data) + from->byte_offset, 0, nullptr, nullptr));
-        break;
-    }
-    OPENCL_CALL(clFinish(this->GetQueue(to->device)));
-  } else {
-    LOG(FATAL) << "Expect copy from/to SYCL or between SYCL";
-  }*/
 }
 
 void SYCLWorkspace::StreamSync(Device dev, TVMStreamHandle stream) {
   ICHECK(stream == nullptr);
   SYCL_CALL(this->GetQueue(dev).wait_and_throw());
-  /*
-  ICHECK(stream == nullptr);
-  OPENCL_CALL(clFinish(this->GetQueue(dev)));*/
 }
 
 void* SYCLWorkspace::AllocWorkspace(Device dev, size_t size, DLDataType type_hint) {
