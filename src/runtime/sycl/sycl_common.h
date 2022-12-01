@@ -76,6 +76,45 @@ namespace tvm {
 namespace runtime {
 namespace syclT {
 
+inline const char* SYCLGetErrorString(std::error_code error_code) {
+  sycl::errc error_code_value = static_cast<sycl::errc>(error_code.value());
+  switch(error_code_value){
+    case sycl::errc::success:
+      return "SUCCESS";
+    case sycl::errc::runtime:
+      return "RUNTIME ERROR";
+    case sycl::errc::kernel:
+      return "KERNEL ERROR";
+    case sycl::errc::accessor:
+      return "ACCESSOR ERROR";
+    case sycl::errc::nd_range:
+      return "NDRANGE ERROR";
+    case sycl::errc::event:
+      return "EVENT ERROR";
+    case sycl::errc::kernel_argument:
+      return "KERNEL ARGUMNET ERROR";
+    case sycl::errc::build:
+      return "BUILD ERROR";
+    case sycl::errc::invalid:
+      return "INVALID ERROR";
+    case sycl::errc::memory_allocation:
+      return "MEMORY ALLOCATION";
+    case sycl::errc::platform:
+      return "PLATFORM ERROR";
+    case sycl::errc::profiling:
+      return "PROFILING ERROR";
+    case sycl::errc::feature_not_supported:
+      return "FEATURE NOT SUPPORTED";
+    case sycl::errc::kernel_not_supported:
+      return "kERNEL NOT SUPPORTED";
+    case sycl::errc::backend_mismatch:
+      return "BACKEND MISMATCH";     
+  }
+}
+
+#define SYCL_CHECK_ERROR(e) \
+  { ICHECK(e == sycl::errc::success) << "SYCL Error, code=" << e << ": " << syclT::SYCLGetErrorString(e); }
+
 /*!
  * \brief Protected SYCL call
  * \param func Expression to call.
@@ -84,7 +123,8 @@ namespace syclT {
   {                                                           \
     try{                                                      \
       func;                                                   \
-    }catch(const sycl::exception &e){                         \
+    }catch(const sycl::exception const& e){                   \
+      SYCL_CHECK_ERROR(e.code())                              \
       std::cout << "Caught synchronous SYCL exception:\n"     \
               << e.what() << std::endl;                       \
     }                                                         \
@@ -102,12 +142,13 @@ class SYCLWorkspace : public DeviceAPI {
  public:
   // type key
   std::string type_key;
+  // global platform id
   // global platform
-  sycl::platform platform;
+  std::vector<sycl::platform> platforms;
   // global platform name
-  std::string platform_name;
+  std::vector<std::string> platform_names;
   // global context of this process
-  sycl::context context;
+  std::vector<sycl::context> contexts;
   // whether the workspace it initialized.
   bool initialized_{false};
   // the device type
@@ -132,10 +173,9 @@ class SYCLWorkspace : public DeviceAPI {
   // destructor
   ~SYCLWorkspace() {
     LOG(WARNING) << "todo, not support now";
-    /*
-    if (context != nullptr) {
-      OPENCL_CALL(clReleaseContext(context));
-    }*/
+    for(auto queue : queues){
+      SYCL_CALL(queue.wait_and_throw());
+    }
   }
   // Initialzie the device.
   void Init(const std::string& type_key, const std::string& device_type,
@@ -143,7 +183,6 @@ class SYCLWorkspace : public DeviceAPI {
   virtual void Init() { Init("sycl", "gpu"); }
   // Check whether the context is SYCL or not.
   virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLSYCL; }
-  virtual bool IsSYCLHostDevice(Device dev) {return dev.device_type == kDLSYCLHost;}
   std::string GetDataType(DLDataType dtype){
     uint8_t type = dtype.code;
 //  *  Examples
@@ -170,7 +209,9 @@ class SYCLWorkspace : public DeviceAPI {
   }
   // get the queue of the device
   sycl::queue GetQueue(Device dev) {
-    ICHECK(IsSYCLDevice(dev));
+    VLOG(1) << "sycl get queue device type " << dev.device_type << std::endl; 
+    // std::cout << "sycl get queue device type " << dev.device_type << std::endl; 
+    ICHECK(IsSYCLDevice(dev) );
     this->Init();
     ICHECK(dev.device_id >= 0 && static_cast<size_t>(dev.device_id) < queues.size())
         << "Invalid SYCL device_id=" << dev.device_id;
@@ -178,6 +219,8 @@ class SYCLWorkspace : public DeviceAPI {
   }
   // get the event queue of the context
   std::vector<sycl::event>& GetEventQueue(Device dev) {
+    VLOG(1) << "sycl get event queue device type " << dev.device_type << std::endl; 
+    // std::cout << "sycl get event queue device type " << dev.device_type << std::endl; 
     ICHECK(IsSYCLDevice(dev));
     this->Init();
     ICHECK(dev.device_id >= 0 && static_cast<size_t>(dev.device_id) < queues.size())
@@ -214,8 +257,12 @@ class SYCLWorkspace : public DeviceAPI {
   // get the global workspace
   static SYCLWorkspace* Global();
 
-  void CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) final;
-  std::vector<int> syclGetDeviceIDs(std::string device_type);
+  void CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) final;  
+// protected:
+//   void CopyDataFromTo(const void* from, size_t from_offset, void* to, size_t to_offset,
+//                               size_t num_bytes, Device dev_from, Device dev_to,
+//                               DLDataType type_hint, TVMStreamHandle stream) final; 
+                           
 };
 
 /*! \brief Thread local workspace */

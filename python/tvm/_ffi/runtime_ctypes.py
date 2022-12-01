@@ -210,6 +210,7 @@ class Device(ctypes.Structure):
         12: "ext_dev",
         14: "hexagon",
         15: "webgpu",
+        17: "sycl",
     }
     STR2MASK = {
         "llvm": 1,

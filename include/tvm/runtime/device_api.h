@@ -270,8 +270,6 @@ inline const char* DeviceName(int type) {
       return "hexagon";
     case kDLSYCL:
       return "sycl";
-    case kDLSYCLHost:
-      return "sycl_host";
     default:
       LOG(FATAL) << "unknown type =" << type;
       return "Unknown";
