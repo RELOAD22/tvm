@@ -286,29 +286,30 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
   VLOG(1) << "from device " << from->device.device_id << " type : "<< from->device.device_type<<std::endl;
   VLOG(1) << "to device " << to->device.device_id << " type : "<< to->device.device_type<<std::endl;
 
-  // VLOG(1) << "before convert from device data pointer address : " << from->data << std::endl;
-  // VLOG(1) << "before convert to device data pointer address : " << to->data << std::endl;
-  const auto* from_data = static_cast<const uint64_t*>(from->data) + from->byte_offset;
-  auto* to_data = static_cast<uint64_t*>(to->data) + to->byte_offset;
+  VLOG(1) << "before convert from device data pointer address : " << from->data << std::endl;
+  VLOG(1) << "before convert to device data pointer address : " << to->data << std::endl;
+  
+  from->data = static_cast<char*>(from->data) + from->byte_offset;
+  to->data = static_cast<char*>(to->data) + to->byte_offset;
 
   ICHECK(from_size == to_size) << "TVMArrayCopyFromTo: The size must exactly match";
 
-  VLOG(1) << "after convert from device data pointer address : " << from_data << std::endl;
-  VLOG(1) << "after convert to device data pointer address : " << to_data << std::endl;
+  VLOG(1) << "after convert from device data pointer address : " << from->data << std::endl;
+  VLOG(1) << "after convert to device data pointer address : " << to->data << std::endl;
   if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)){
     auto queue = this->GetQueue(to->device);
-    auto event = queue.memcpy(to_data,from_data,from_size);
+    auto event = queue.memcpy(to->data,from->data,from_size);
     SYCL_CALL(event.wait());
   }else if (IsSYCLDevice(from->device) && to->device.device_type == kDLCPU){
     auto queue = this->GetQueue(from->device);
-    auto event = queue.memcpy(to_data,from_data,from_size);
+    auto event = queue.memcpy(to->data,from->data,from_size);
     SYCL_CALL(event.wait());
-    // SYCL_CALL(this->GetQueue(from->device).memcpy(to_data, from_data, from_size).wait());
+    // SYCL_CALL(this->GetQueue(from->device).memcpy(to->data, from->data, from_size).wait());
   }else if (from->device.device_type == kDLCPU && IsSYCLDevice(to->device)){
     auto queue = this->GetQueue(to->device);
-    auto event = queue.memcpy(to_data,from_data,from_size);
+    auto event = queue.memcpy(to->data,from->data,from_size);
     SYCL_CALL(event.wait());
-    // SYCL_CALL(this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait());
+    // SYCL_CALL(this->GetQueue(to->device).memcpy(to->data, from->data, from_size).wait());
   }else {
     LOG(FATAL) << "Expect copy from/to SYCL or between SYCL";
   }
@@ -327,27 +328,27 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
 
 //   VLOG(1) << "before convert from device data pointer address : " << from->data << std::endl;
 //   VLOG(1) << "before convert to device data pointer address : " << to->data << std::endl;
-//   const auto* from_data = static_cast<const uint64_t*>(from->data) + from->byte_offset;
-//   auto* to_data = static_cast<uint64_t*>(to->data) + to->byte_offset;
+//   const auto* from->data = static_cast<const uint64_t*>(from->data) + from->byte_offset;
+//   auto* to->data = static_cast<uint64_t*>(to->data) + to->byte_offset;
 
 //   ICHECK(from_size == to_size) << "TVMArrayCopyFromTo: The size must exactly match";
 
-//   VLOG(1) << "after convert from device data pointer address : " << from_data << std::endl;
-//   VLOG(1) << "after convert to device data pointer address : " << to_data << std::endl;
+//   VLOG(1) << "after convert from device data pointer address : " << from->data << std::endl;
+//   VLOG(1) << "after convert to device data pointer address : " << to->data << std::endl;
 //   if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)){
 //     auto queue = this->GetQueue(to->device);
-//     auto event = queue.memcpy(to_data,from_data,from_size);
+//     auto event = queue.memcpy(to->data,from->data,from_size);
 //     SYCL_CALL(event.wait());
 //   }else if (IsSYCLDevice(from->device) && to->device.device_type == kDLCPU){
 //     auto queue = this->GetQueue(from->device);
-//     auto event = queue.memcpy(to_data,from_data,from_size);
+//     auto event = queue.memcpy(to->data,from->data,from_size);
 //     SYCL_CALL(event.wait());
-//     // SYCL_CALL(this->GetQueue(from->device).memcpy(to_data, from_data, from_size).wait());
+//     // SYCL_CALL(this->GetQueue(from->device).memcpy(to->data, from->data, from_size).wait());
 //   }else if (from->device.device_type == kDLCPU && IsSYCLDevice(to->device)){
 //     auto queue = this->GetQueue(to->device);
-//     auto event = queue.memcpy(to_data,from_data,from_size);
+//     auto event = queue.memcpy(to->data,from->data,from_size);
 //     SYCL_CALL(event.wait());
-//     // SYCL_CALL(this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait());
+//     // SYCL_CALL(this->GetQueue(to->device).memcpy(to->data, from->data, from_size).wait());
 //   }else {
 //     LOG(FATAL) << "Expect copy from/to SYCL or between SYCL";
 //   }

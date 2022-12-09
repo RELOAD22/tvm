@@ -35,7 +35,7 @@
 #
 #  $ make -j8
 #--------------------------------------------------------------------
-
+add_definitions(-w)
 #---------------------------------------------
 # Backend runtimes.
 #---------------------------------------------
@@ -46,7 +46,8 @@
 # - ON: enable CUDA with cmake's auto search
 # - OFF: disable CUDA
 # - /path/to/cuda: use specific path to cuda toolkit
-set(USE_CUDA OFF)
+#set(USE_CUDA OFF)
+set(USE_CUDA ON)
 
 # Whether enable ROCM runtime
 #
@@ -68,7 +69,31 @@ set(USE_AOCL OFF)
 # - ON: enable SYCL with cmake's auto search
 # - OFF: disable SYCL
 # - /path/to/sycl: use specific path to sycl
-set(USE_SYCL OFF)
+# set(USE_SYCL OFF)
+# set(USE_SYCL /home/wzy/sycl_workspace/tvm-sycl-build-cuda-debug)
+#set(USE_SYCL /home/wzy/sycl_workspace/tvm-sycl-print-cuda)
+# set(USE_SYCL /home/wzy/sycl_workspace/build-cuda-2022-09-log-debug)
+set(USE_SYCL /home/wzy/sycl_workspace/build-cuda-2022-09-log)
+
+set(USE_SYCL_CUDA "nvptx64-nvidia-cuda")
+# set(USE_SYCL_HIP "amdgcn-amd-amdhsa -Xsycl-target-backend --offload-arch=gfx906")
+
+if(IS_DIRECTORY ${USE_SYCL})
+    set(CMAKE_C_COMPILER "${USE_SYCL}/bin/clang")
+    set(CMAKE_CXX_COMPILER "${USE_SYCL}/bin/clang++")
+    add_definitions(-DSYCL_CXX_COMPILER="${USE_SYCL}/bin/clang++")
+    message(STATUS "Use SYCL COMPILER")
+    if (DEFINED USE_SYCL_CUDA)
+        add_definitions(-DSYCL_FLAGS="  -std=c++17 -O3  -fsycl -fsycl-targets=${USE_SYCL_CUDA}  -fPIC -shared -Wno-sycl-target -Wno-linker-warnings ")
+        message(STATUS "Use SYCL CUDA COMPILER FLAGS")
+    elseif (DEFINED USE_SYCL_HIP)
+        add_definitions(-DSYCL_FLAGS=" -std=c++17 -O3  -fsycl -fsycl-targets=${USE_SYCL_CUDA}   -fPIC -shared -Wno-sycl-target -Wno-linker-warnings ")
+        message(STATUS "Use SYCL HIP COMPILER FLAGS")
+    else()
+        add_definitions(-DSYCL_FLAGS=" -std=c++17 -O3  -fsycl -fsycl-targets=spir64_x86_64   -fPIC -shared ")
+        message(STATUS "Use SYCL SPIRV COMPILER FLAGS")
+    endif()
+endif()
 
 # Whether enable OpenCL runtime
 #
@@ -76,7 +101,8 @@ set(USE_SYCL OFF)
 # - ON: enable OpenCL with cmake's auto search
 # - OFF: disable OpenCL
 # - /path/to/opencl-sdk: use specific path to opencl-sdk
-set(USE_OPENCL OFF)
+#set(USE_OPENCL OFF)
+set(USE_OPENCL ON)
 
 # Whether enable Metal runtime
 set(USE_METAL OFF)
@@ -141,7 +167,9 @@ set(USE_MICRO_STANDALONE_RUNTIME OFF)
 # - OFF: disable llvm, note this will disable CPU codegen
 #        which is needed for most cases
 # - /path/to/llvm-config: enable specific LLVM when multiple llvm-dev is available.
-set(USE_LLVM OFF)
+#set(USE_LLVM OFF)
+set(USE_LLVM "/home/wzy/app/llvm-build-14.0.6/bin/llvm-config --link-static")
+set(HIDE_PRIVATE_SYMBOLS ON)
 
 #---------------------------------------------
 # Contrib libraries
@@ -290,7 +318,8 @@ set(USE_CLML_GRAPH_EXECUTOR OFF)
 set(USE_ANTLR OFF)
 
 # Whether use Relay debug mode
-set(USE_RELAY_DEBUG OFF)
+#set(USE_RELAY_DEBUG OFF)
+set(USE_RELAY_DEBUG ON)
 
 # Whether to build fast VTA simulator driver
 set(USE_VTA_FSIM OFF)
@@ -378,8 +407,7 @@ set(USE_PAPI OFF)
 #   be enabled, otherwise it will be disabled.
 # Note that cmake will use `find_package` to find GTest. Please use cmake's
 # predefined variables to specify the path to the GTest package if needed.
-#set(USE_GTEST AUTO)
-set(USE_GTEST ON)
+set(USE_GTEST AUTO)
 
 # Enable using CUTLASS as a BYOC backend
 # Need to have USE_CUDA=ON
