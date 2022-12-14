@@ -50,12 +50,16 @@ class CodeGenSYCL final : public CodeGenC {
   void PrintStorageSync(const CallNode* op) final;                           // NOLINT(*)
   void PrintType(DataType t, std::ostream& os) final;                        // NOLINT(*)
   void PrintType(const Type& type, std::ostream& os) final;                  // NOLINT(*)
+  std::string GetVecType(DataType t, bool no_vec_len=false);
   std::string GetVecLoad(DataType t, const BufferNode* buffer, PrimExpr base) final;
   void PrintVecStore(const BufferNode* buffer, DataType t, PrimExpr base,
                      const std::string& value) final;  // NOLINT(*)
   // the address of load/store
   void PrintVecAddr(const BufferNode* buffer, DataType t, PrimExpr base,
                     std::ostream& os);                                           // NOLINT(*)
+  void PrintVecElemLoad(const std::string& vec, DataType t, int i,
+                        std::ostream& os) final;  // NOLINT(*)
+  void PrintVecElemStore(const std::string& vec, DataType t, int i, const std::string& value) final;
   void PrintRestrict(const Var& v, std::ostream& os) final;                      // NOLINT(*)
   std::string CastFromTo(std::string value, DataType from, DataType target);     // NOLINT(*)
   std::string CastTo(std::string value, DataType target);                        // NOLINT(*)

@@ -108,7 +108,11 @@ def context(target, extra_files=None):
         device = tgt.attrs.get("device", "")
         if device != "":
             possible_names.append(_alias(device))
-        possible_names.append(tgt.kind.name)
+        # use opencl pre-tuned log when target=sycl, because lack of sycl pre-tuned log
+        if(tgt.kind.name == "sycl"):
+            possible_names.append("opencl")
+        else:
+            possible_names.append(tgt.kind.name)
 
         all_packages = list(PACKAGE_VERSION.keys())
         for name in possible_names:

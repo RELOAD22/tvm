@@ -74,14 +74,89 @@ void SYCLWorkspace::SetDevice(Device dev) { GetThreadEntry()->device.device_id =
 
 void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
   this->Init();
-  LOG(WARNING) << "todo, not support now";
+  size_t index = static_cast<size_t>(dev.device_id);
+  if (kind != kExist) {
+    ICHECK(index < devices.size()) << "Invalid device id " << index;
+  }
+  switch (kind) {
+    case kExist: {
+      *rv = static_cast<int>(index < devices.size());
+      break;
+    }
+    case kMaxThreadsPerBlock: {
+      size_t max_work_group_size = this->devices[index].get_info<sycl::info::device::max_work_group_size>();
+      *rv = static_cast<int64_t>(max_work_group_size);
+      break;
+    }
+    case kWarpSize: {
+      // warp_size in cuda is equivalent to max_subgroup_size in sycl
+      std::vector<size_t> sub_group_sizes = this->devices[index].get_info<sycl::info::device::sub_group_sizes>();
+      size_t max_sub_group_size = *max_element(std::begin(sub_group_sizes), std::end(sub_group_sizes));
+      *rv = static_cast<int64_t>(max_sub_group_size);
+      break;
+    }
+    case kMaxSharedMemoryPerBlock: {
+      cl_ulong value = this->devices[index].get_info<sycl::info::device::local_mem_size>();
+      *rv = static_cast<int64_t>(value);
+      break;
+    }
+    case kComputeVersion: {
+      std::string backend_version = this->devices[index].get_info<sycl::info::device::backend_version>();
+      *rv = backend_version;
+      break;
+    }
+    case kDeviceName: {
+      std::string device_name = this->devices[index].get_info<sycl::info::device::name>();
+      *rv = device_name;
+      break;
+    }
+    case kMaxClockRate: {
+      cl_uint max_clock_frequency = this->devices[index].get_info<sycl::info::device::max_clock_frequency>();
+      // SYCL returns the clock rate in MHz, while CUDA/ROCm return the
+      // clock rate in kHz.  Converting to the same units for each.
+      *rv = static_cast<int32_t>(max_clock_frequency * 1000);
+      break;
+    }
+    case kMultiProcessorCount: {
+      cl_uint value = this->devices[index].get_info<sycl::info::device::max_compute_units>();
+      *rv = static_cast<int32_t>(value);
+      break;
+    }
+    case kMaxThreadDimensions: {
+      sycl::id<3> max_work_item_sizes = this->devices[index].get_info<sycl::info::device::max_work_item_sizes<3>>();
+      std::stringstream ss;  // use json string to return multiple int values;
+      ss << "[" << max_work_item_sizes[0] << ", " << max_work_item_sizes[1] << ", " << max_work_item_sizes[2] << "]";
+      *rv = ss.str();
+      break;
+    }
+    case kMaxRegistersPerBlock:
+      return;
+    case kGcnArch:
+      return;
+    case kApiVersion: {
+      return;
+    }
+    case kDriverVersion: {
+      std::string driver_version = this->devices[index].get_info<sycl::info::device::driver_version>();
+      *rv = driver_version;
+      break;
+    }
+    /*
+    case kCacheLineSize: {
+      cl_uint cache_line_bytes = this->devices[index].get_info<sycl::info::device::global_mem_cache_line_size>();
+      *rv = static_cast<int64_t>(cache_line_bytes);
+      break;
+    }
+    */
+  }
 }
 
 void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
                                       DLDataType type_hint) {
   this->Init();
-  VLOG(1) << "allocating " << size << "bytes share memory";
-  void* ret = sycl::malloc_shared(size, this->devices[dev.device_id], this->context);
+  VLOG(1) << "allocating " << size << "bytes device memory";
+  void* ret;
+  SYCL_CALL(ret = sycl::malloc_device(size, this->GetQueue(dev)))
   return ret;
 }
 
@@ -111,8 +186,7 @@ void* SYCLWorkspace::AllocDataSpace(Device dev, int ndim, const int64_t* shape, 
 void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
   //std::cout<<dev.device_type<<std::endl;
   if(IsSYCLDevice(dev)){
-    sycl::queue queue = this->GetQueue(dev);
-    sycl::free(ptr, queue);
+    SYCL_CALL(sycl::free(ptr, this->GetQueue(dev)))
   }else{
     LOG(WARNING) << "not sycl device:"<<dev.device_type;
   }
@@ -165,7 +239,6 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
   char* to_data = (char*)to->data;
   size_t to_offset = to->byte_offset;
   to_data += to_offset;
-
   ICHECK(from_size == to_size) << "TVMArrayCopyFromTo: The size must exactly match";
   if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)){
     this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait();
@@ -173,7 +246,6 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
     this->GetQueue(from->device).memcpy(to_data, from_data, from_size).wait();
   }else if (from->device.device_type == kDLCPU && IsSYCLDevice(to->device)){
     this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait();
-    //std::cout<<"CopyData: cpu->sycl"<<std::endl;
   }else {
     LOG(FATAL) << "Expect copy from/to SYCL or between SYCL";
   }
@@ -325,8 +397,7 @@ void SYCLWorkspace::Init(const std::string& type_key, const std::string& device_
       try {
         std::rethrow_exception(e);
       } catch (const sycl::exception &e) {
-        std::cout << "Caught asynchronous SYCL exception:\n"
-                  << e.what() << std::endl;
+        LOG(FATAL) << "Caught asynchronous SYCL exception:" << e.what();
       }
     }
   };

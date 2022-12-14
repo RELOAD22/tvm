@@ -31,27 +31,6 @@
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/profiling.h>
 
-/* There are many OpenCL platforms that do not yet support OpenCL 2.0,
- * hence we use 1.2 APIs, some of which are now deprecated.  In order
- * to turn off the deprecation warnings (elevated to errors by
- * -Werror) we explicitly disable the 1.2 deprecation warnings.
- *
- * At the point TVM supports minimum version 2.0, we can remove this
- * define.
- */
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-/* Newer releases of OpenCL header files (after May 2018) work with
- * any OpenCL version, with an application's target version
- * specified. Setting the target version disables APIs from after that
- * version, and sets appropriate USE_DEPRECATED macros.  The above
- * macro for CL_USE_DEPRECATED_OPENCL_1_2_APIS is still needed in case
- * we are compiling against the earlier version-specific OpenCL header
- * files.  This also allows us to expose the OpenCL version through
- * tvm.runtime.Device.
- */
-// #define CL_TARGET_OPENCL_VERSION 120
-
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
@@ -64,6 +43,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#ifdef _WIN32
+    #include <process.h>
+#else
+    #include <unistd.h>
+#endif
 
 #include "../file_utils.h"
 #include "../meta_data.h"
@@ -85,13 +69,32 @@ namespace syclT {
     try{                                                      \
       func;                                                   \
     }catch(const sycl::exception &e){                         \
-      std::cout << "Caught synchronous SYCL exception:\n"     \
-              << e.what() << std::endl;                       \
+      /*针对USM等sycl runtime error，终止当前进程*/                            \
+      if(e.code() == sycl::errc::runtime){            \
+        std::cerr<< "Caught synchronous SYCL runtime exception:" <<e.what()<< std::endl;\
+        std::exit(0);                                         \
+      }                                                       \
+      std::cout<< "Caught synchronous SYCL exception:" <<e.what()<< std::endl;\
+      LOG(FATAL) << "Caught synchronous SYCL exception:" << e.what();  \
     }                                                         \
   }
 
 static_assert(sizeof(cl_mem) == sizeof(void*), "Required to store cl_mem inside void*");
 
+
+class SYCLFilePath {
+  public:
+    SYCLFilePath() {}
+    SYCLFilePath(int module_id){
+      int pid = (int)getpid();
+      std::string filename = prefix + "/" + std::to_string(pid) + "_" +std::to_string(module_id);
+      source_file_path = filename + ".cpp";
+      shared_lib_path = filename + ".so";
+    }
+    std::string prefix = SYCL_TEMP_FOLDER;
+    std::string source_file_path;
+    std::string shared_lib_path;
+};
 
 class SYCLThreadEntry;
 
@@ -127,6 +130,9 @@ class SYCLWorkspace : public DeviceAPI {
   std::vector<size_t> free_kernel_ids;
   // the mutex for initialization
   std::mutex mu;
+  // the number of sycl_modules
+  int module_num = 0;
+
 
 
   // destructor
@@ -142,7 +148,7 @@ class SYCLWorkspace : public DeviceAPI {
             const std::string& platform_name = "");
   virtual void Init() { Init("sycl", "gpu"); }
   // Check whether the context is SYCL or not.
-  virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLSYCL; }
+  virtual bool IsSYCLDevice(Device dev) { return dev.device_type == static_cast<DLDeviceType>(kDLSYCL); }
   // get the queue of the device
   sycl::queue GetQueue(Device dev) {
     ICHECK(IsSYCLDevice(dev));
@@ -271,7 +277,11 @@ class SYCLModuleNode : public ModuleNode {
   };
   explicit SYCLModuleNode(std::string data, std::string fmt,
                             std::unordered_map<std::string, FunctionInfo> fmap, std::string source)
-      : data_(data), fmt_(fmt), fmap_(fmap), source_(source) {}
+      : data_(data), fmt_(fmt), fmap_(fmap), source_(source) {
+        workspace_ = GetGlobalWorkspace();
+        workspace_->module_num++;           //the number of sycl_modules add 1
+        file_path = syclT::SYCLFilePath(workspace_->module_num);
+      }
   // destructor
   ~SYCLModuleNode();
 
@@ -310,6 +320,8 @@ class SYCLModuleNode : public ModuleNode {
   std::vector<cl_kernel> kernels_;
   // parsed kernel data, Mapping from primitive name to kernel code.
   std::unordered_map<std::string, std::string> parsed_kernels_;
+  //id of SYCLModuleNode, start from 1, to detemine unique filename of source code and share library
+  syclT::SYCLFilePath file_path;
   // share library handler
   void * so_handler_ = nullptr;
 };

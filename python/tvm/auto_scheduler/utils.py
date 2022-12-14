@@ -293,6 +293,15 @@ def call_func_with_timeout(
     worker.send(func, args, kwargs, timeout)
     try:
         res = worker.recv()
+    except ChildProcessError:
+        # when a sycl runtime error occurs in the child process used for measure, the child process is terminated.
+        # Restart measure the previous schedule.
+        print("Restart measure the previous schedule.")
+        worker.send(func, args, kwargs, timeout)
+        try:
+            res = worker.recv()
+        except Exception:  # pylint: disable=broad-except
+            res = Exception(make_traceback_info())
     except Exception:  # pylint: disable=broad-except
         res = Exception(make_traceback_info())
 

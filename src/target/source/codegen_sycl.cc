@@ -181,7 +181,7 @@ void CodeGenSYCL::AddFunction(const PrimFunc& f) {
   stream << "    }); });\n";   
 
 
-  stream << "  Q.wait();\n";
+  stream << "  Q.wait_and_throw();\n";
   stream << "}\n";
 
 }
@@ -264,7 +264,8 @@ void CodeGenSYCL::BindThreadIndex(const IterVar& iv) {
   runtime::ThreadScope ts = runtime::ThreadScope::Create(iv->thread_tag);
   std::ostringstream os;
   if (ts.rank == 1) {
-    os << "item_ct1.get_local_id(" << ts.dim_index << ")";
+    // swap the first(0) and third(2) dimension size in a SYCL workGroup.
+    os << "item_ct1.get_local_id(" << 2-ts.dim_index << ")";
   } else {
     os << "item_ct1.get_group(" << ts.dim_index << ")";
   }
@@ -344,7 +345,60 @@ void CodeGenSYCL::PrintType(DataType t, std::ostream& os) {  // NOLINT(*)
       return;
     }
   }
-  LOG(FATAL) << "Cannot convert type " << t << " to OpenCL type";
+  LOG(FATAL) << "Cannot convert type " << t << " to SYCL type";
+}
+
+std::string CodeGenSYCL::GetVecType(DataType t, bool no_vec_len){
+  int lanes = t.lanes();
+  std::string vec_type = "";
+  if (t.is_float()){
+    switch (t.bits()){
+      case 16:
+        vec_type += "half";
+        break;
+      case 32:
+        vec_type += "float";
+        break;
+      case 64:
+       vec_type += "double";
+        break;
+    }
+  }else if (t.is_uint() || t.is_int()) {
+    if (t.is_uint()) {
+      vec_type += "u";
+    }
+    if (t.bits() == 8 && t.lanes() == 4) {
+      // directly 4 8 bit int in integer.
+      vec_type += "int";
+      return vec_type;
+    }
+    switch (t.bits()) {
+      case 8:
+        vec_type += "char";
+        break;
+      case 16:
+        vec_type += "short";
+        break;
+      case 32:
+        vec_type += "int";
+        break;
+      case 64:
+        vec_type += "long";
+        break;
+      case 1:
+        vec_type += "int";
+        break;
+    }
+  }
+  if(vec_type == "" or vec_type == "u"){
+    LOG(FATAL) << "unsupport sycl vector type:" << t;
+  }
+  if ((lanes >= 2 && lanes <= 4) || lanes == 8 || lanes == 16) {
+    if(!no_vec_len){
+      vec_type += std::to_string(lanes);
+    }
+  }
+  return vec_type;
 }
 
 void CodeGenSYCL::PrintType(const Type& type, std::ostream& os) {  // NOLINT(*)
@@ -381,14 +435,15 @@ void CodeGenSYCL::PrintVecAddr(const BufferNode* buffer, DataType t, PrimExpr ba
 }
 std::string CodeGenSYCL::GetVecLoad(DataType t, const BufferNode* buffer, PrimExpr base) {
   std::ostringstream os;
-
+  std::string basic_type = this->GetVecType(t, true);
+  /*
   std::ostringstream x;
   PrintType(t, x);
   std::string type = x.str();
   std::string basic_type = type;
   if(t.lanes() >= 2){
     basic_type = std::regex_replace(type, std::regex("\\d+"), "");
-  }
+  }*/
   //for example, type=float4, basic_type=float
 
   os << "({";
@@ -466,9 +521,10 @@ std::string CodeGenSYCL::CastTo(std::string value, DataType target) {
     os << ")" << value << ")";
   } else {  // convert vector type
     os << "(";
-    os << "convert_";
-    this->PrintType(target, os);
-    os << "(" << value << "))";
+    os << value << ".convert<";
+    os << this->GetVecType(target, true);
+    os << ">()";
+    os << ")";
   }
   return os.str();
 }
@@ -735,6 +791,17 @@ void CodeGenSYCL::SetTextureScope(
   }
 }
 
+void CodeGenSYCL::PrintVecElemLoad(const std::string& vec, DataType t, int i,
+                                std::ostream& os) {  // NOLINT(*)
+  os << vec << "[" << std::hex << i << "]" << std::dec;
+}
+
+void CodeGenSYCL::PrintVecElemStore(const std::string& vec, DataType t, int i,
+                                 const std::string& value) {
+  this->PrintIndent();
+  stream << vec << "[" << std::hex << i << "]" << " = " << value << ";\n" << std::dec;
+}
+
 runtime::Module BuildSYCL(IRModule mod, Target target) {
   using tvm::runtime::Registry;
   bool output_ssa = false;
@@ -770,7 +837,7 @@ runtime::Module BuildSYCL(IRModule mod, Target target) {
     code << fsource;
   }
 
-  return SYCLModuleCreate(code.str(), "cl", ExtractFuncInfo(mod), code.str());
+  return SYCLModuleCreate(code.str(), "sycl", ExtractFuncInfo(mod), code.str());
 }
 
 TVM_REGISTER_GLOBAL("target.build.sycl").set_body_typed(BuildSYCL);
