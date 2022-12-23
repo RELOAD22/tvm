@@ -95,7 +95,6 @@ ENV/
 *.pyc
 *~
 config.mk
-config.cmake
 Win32
 *.dir
 perf
