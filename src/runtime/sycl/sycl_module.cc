@@ -32,6 +32,7 @@
 #include <dlfcn.h>
 
 #include "../source_utils.h"
+#include "../file_utils.h"
 #include "sycl_common.h"
 
 namespace tvm {
@@ -95,11 +96,6 @@ class SYCLWrappedFunc {
 
 SYCLModuleNode::~SYCLModuleNode() {
   {
-    // free the kernel ids in global table.
-    std::lock_guard<std::mutex> lock(workspace_->mu);
-    for (auto& kv : kid_map_) {
-      workspace_->free_kernel_ids.push_back(kv.second.kernel_id);
-    }
     // close share library handler
     if(so_handler_ != nullptr){
       dlclose(so_handler_);
@@ -224,20 +220,6 @@ std::string SYCLModuleNode::GetSource(const std::string& format) {
 void SYCLModuleNode::Init() {
   workspace_ = GetGlobalWorkspace();
   workspace_->Init();
-  // initialize the kernel id, need to lock global table.
-  std::lock_guard<std::mutex> lock(workspace_->mu);
-  for (const auto& kv : fmap_) {
-    const std::string& key = kv.first;
-    KTRefEntry e;
-    if (workspace_->free_kernel_ids.size() != 0) {
-      e.kernel_id = workspace_->free_kernel_ids.back();
-      workspace_->free_kernel_ids.pop_back();
-    } else {
-      e.kernel_id = workspace_->num_registered_kernels++;
-    }
-    e.version = workspace_->timestamp++;
-    kid_map_[key] = e;
-  }
 
   // split into source artifacts for each kernel
   parsed_kernels_ = SplitKernels(GetSource("sycl"));
