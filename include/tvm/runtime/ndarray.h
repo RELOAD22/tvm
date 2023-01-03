@@ -48,7 +48,10 @@ using Device = DLDevice;
 constexpr DLDeviceType kNullDeviceType = static_cast<DLDeviceType>(0);
 
 // An 'invalid' device type, does not correspond to any DLDeviceType enum.
-constexpr DLDeviceType kInvalidDeviceType = static_cast<DLDeviceType>(-1);
+// constexpr DLDeviceType kInvalidDeviceType = static_cast<DLDeviceType>(-1);
+// clang++ 16 : error: constexpr variable 'kInvalidDeviceType' must be initialized by a constant expression
+// note: integer value -1 is outside the valid range of values [0, 15] for this enumeration type
+const DLDeviceType kInvalidDeviceType = static_cast<DLDeviceType>(-1);
 
 namespace runtime {
 

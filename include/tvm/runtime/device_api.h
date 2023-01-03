@@ -268,6 +268,8 @@ inline const char* DeviceName(int type) {
       return "webgpu";
     case kDLHexagon:
       return "hexagon";
+    case kDLSYCL:
+      return "sycl";      
     default:
       LOG(FATAL) << "unknown type =" << type;
       return "Unknown";
