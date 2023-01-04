@@ -28,7 +28,7 @@ namespace runtime {
 
 Module SYCLModuleCreate(std::string data, std::string fmt,
                           std::unordered_map<std::string, FunctionInfo> fmap, std::string source) {
-  return codegen::DeviceSourceModuleCreate(data, fmt, fmap, "opencl");
+  return codegen::DeviceSourceModuleCreate(data, fmt, fmap, "sycl");
 }
 
 }  // namespace runtime

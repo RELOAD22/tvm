@@ -65,10 +65,12 @@ set(USE_AOCL OFF)
 # Whether enable SYCL runtime
 #
 # Possible values:
-# - ON: enable SYCL with cmake's auto search
+# - ON: enable SYCL with cmake's auto search, not support now.
 # - OFF: disable SYCL
 # - /path/to/sycl: use specific path to sycl
 set(USE_SYCL OFF)
+# if enable SYCL runtime, please set storage path for sycl temporary files. The default path is "/tmp/tvm_sycl/".
+set(SYCL_TEMP_FOLDER "/tmp/tvm_sycl")
 
 # Whether enable OpenCL runtime
 #

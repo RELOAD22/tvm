@@ -29,6 +29,7 @@ tvm_option(USE_OPENCL "Build with OpenCL" OFF)
 tvm_option(USE_OPENCL_GTEST "Path to OpenCL specific gtest version for runtime cpp tests." /path/to/opencl/gtest)
 tvm_option(USE_VULKAN "Build with Vulkan" OFF)
 tvm_option(USE_SYCL "Build with SYCL" OFF)
+tvm_option(SYCL_TEMP_FOLDER "Build with SYCL" "/tmp/tvm_sycl")
 
 
 # Whether to use spirv-tools.and SPIRV-Headers from Khronos github or gitlab.
@@ -525,6 +526,9 @@ add_library(tvm_objs OBJECT ${COMPILER_SRCS})
 add_library(tvm_runtime_objs OBJECT ${RUNTIME_SRCS})
 add_library(tvm_libinfo_objs OBJECT ${LIBINFO_FILE})
 if(USE_SYCL)
+  set(CMAKE_CXX_COMPILER "${USE_SYCL}/bin/clang++")
+  add_definitions(-DSYCL_CXX_COMPILER="${USE_SYCL}/bin/clang++")
+  add_definitions(-DSYCL_TEMP_FOLDER="${SYCL_TEMP_FOLDER}")
   set(CMAKE_CXX_FLAGS "-fsycl -fsycl-targets=nvptx64-nvidia-cuda ${CMAKE_CXX_FLAGS}")
   add_library(tvm_sycl_runtime_objs OBJECT ${SYCL_RUNTIME_SRCS})
   add_library(tvm SHARED $<TARGET_OBJECTS:tvm_objs> $<TARGET_OBJECTS:tvm_runtime_objs> $<TARGET_OBJECTS:tvm_sycl_runtime_objs> $<TARGET_OBJECTS:tvm_libinfo_objs>)

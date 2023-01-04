@@ -24,51 +24,23 @@
 #ifndef TVM_RUNTIME_SYCL_SYCL_COMMON_H_
 #define TVM_RUNTIME_SYCL_SYCL_COMMON_H_
 
-#include <tvm/runtime/c_runtime_api.h>
+#include <CL/sycl.hpp>
 #include <tvm/runtime/device_api.h>
-#include <tvm/runtime/logging.h>
-#include <tvm/runtime/ndarray.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/profiling.h>
-
-/* There are many OpenCL platforms that do not yet support OpenCL 2.0,
- * hence we use 1.2 APIs, some of which are now deprecated.  In order
- * to turn off the deprecation warnings (elevated to errors by
- * -Werror) we explicitly disable the 1.2 deprecation warnings.
- *
- * At the point TVM supports minimum version 2.0, we can remove this
- * define.
- */
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-/* Newer releases of OpenCL header files (after May 2018) work with
- * any OpenCL version, with an application's target version
- * specified. Setting the target version disables APIs from after that
- * version, and sets appropriate USE_DEPRECATED macros.  The above
- * macro for CL_USE_DEPRECATED_OPENCL_1_2_APIS is still needed in case
- * we are compiling against the earlier version-specific OpenCL header
- * files.  This also allows us to expose the OpenCL version through
- * tvm.runtime.Device.
- */
-// #define CL_TARGET_OPENCL_VERSION 120
-
-#ifdef __APPLE__
-#include <OpenCL/opencl.h>
-#else
-#include <CL/opencl.h>
-#endif
-#include <CL/sycl.hpp>
 
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#ifdef _WIN32
+    #include <process.h>
+#else
+    #include <unistd.h>
+#endif
 
-#include "../file_utils.h"
-#include "../meta_data.h"
 #include "../pack_args.h"
-#include "../texture.h"
 #include "../thread_storage_scope.h"
 #include "../workspace_pool.h"
 
@@ -85,13 +57,30 @@ namespace syclT {
     try{                                                      \
       func;                                                   \
     }catch(const sycl::exception &e){                         \
-      std::cout << "Caught synchronous SYCL exception:\n"     \
-              << e.what() << std::endl;                       \
+      /*针对USM等sycl runtime error，终止当前进程*/                            \
+      if(e.code() == sycl::errc::runtime){            \
+        std::cerr<< "Caught synchronous SYCL runtime exception:" <<e.what()<< std::endl;\
+        std::exit(0);                                         \
+      }                                                       \
+      std::cout<< "Caught synchronous SYCL exception:" <<e.what()<< std::endl;\
+      LOG(FATAL) << "Caught synchronous SYCL exception:" << e.what();  \
     }                                                         \
   }
 
-static_assert(sizeof(cl_mem) == sizeof(void*), "Required to store cl_mem inside void*");
 
+class SYCLFilePath {
+  public:
+    SYCLFilePath() {}
+    SYCLFilePath(int module_id){
+      int pid = (int)getpid();
+      std::string filename = prefix + "/" + std::to_string(pid) + "_" +std::to_string(module_id);
+      source_file_path = filename + ".cpp";
+      shared_lib_path = filename + ".so";
+    }
+    std::string prefix = SYCL_TEMP_FOLDER;
+    std::string source_file_path;
+    std::string shared_lib_path;
+};
 
 class SYCLThreadEntry;
 
@@ -100,8 +89,6 @@ class SYCLThreadEntry;
  */
 class SYCLWorkspace : public DeviceAPI {
  public:
-  // type key
-  std::string type_key;
   // global platform
   sycl::platform platform;
   // global platform name
@@ -118,68 +105,33 @@ class SYCLWorkspace : public DeviceAPI {
   std::vector<sycl::queue> queues;
   // the events
   std::vector<std::vector<sycl::event>> events;
-  // Number of registered kernels
-  // Used to register kernel into the workspace.
-  size_t num_registered_kernels{0};
-  // The version counter, used
-  size_t timestamp{0};
-  // Ids that are freed by kernels.
-  std::vector<size_t> free_kernel_ids;
   // the mutex for initialization
   std::mutex mu;
-
-
+  // the number of sycl_modules
+  int module_num = 0;
   // destructor
   ~SYCLWorkspace() {
-    LOG(WARNING) << "todo, not support now";
-    /*
-    if (context != nullptr) {
-      OPENCL_CALL(clReleaseContext(context));
-    }*/
   }
   // Initialzie the device.
-  void Init(const std::string& type_key, const std::string& device_type,
-            const std::string& platform_name = "");
-  virtual void Init() { Init("sycl", "gpu"); }
+  void Init(const std::string& device_type, const std::string& platform_name = "");
+  virtual void Init() { Init("gpu"); }
   // Check whether the context is SYCL or not.
-  virtual bool IsSYCLDevice(Device dev) { return dev.device_type == kDLSYCL; }
+  virtual bool IsSYCLDevice(Device dev) { return dev.device_type == static_cast<DLDeviceType>(kDLSYCL); }
   // get the queue of the device
-  sycl::queue GetQueue(Device dev) {
-    ICHECK(IsSYCLDevice(dev));
-    this->Init();
-    ICHECK(dev.device_id >= 0 && static_cast<size_t>(dev.device_id) < queues.size())
-        << "Invalid SYCL device_id=" << dev.device_id;
-    return queues[dev.device_id];
-  }
+  sycl::queue GetQueue(Device dev);
   // get the event queue of the context
-  std::vector<sycl::event>& GetEventQueue(Device dev) {
-    ICHECK(IsSYCLDevice(dev));
-    this->Init();
-    ICHECK(dev.device_id >= 0 && static_cast<size_t>(dev.device_id) < queues.size())
-        << "Invalid SYCL device_id=" << dev.device_id;
-    return events[dev.device_id];
-  }
+  std::vector<sycl::event>& GetEventQueue(Device dev);
   // is current syclQueue in profiling mode
-  bool IsProfiling(Device dev) {
-    sycl::queue queue = GetQueue(dev);
-    return queue.has_property<sycl::property::queue::enable_profiling>();
-  }
+  bool IsProfiling(Device dev);
 
   // override device API
   void SetDevice(Device dev) final;
   void GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) final;
   void* AllocDataSpace(Device dev, size_t size, size_t alignment, DLDataType type_hint) final;
-  void* AllocDataSpace(Device dev, int ndim, const int64_t* shape, DLDataType dtype,
-                       Optional<String> mem_scope = NullOpt) final;
   void FreeDataSpace(Device dev, void* ptr) final;
-  void StreamSync(Device dev, TVMStreamHandle stream) final;
   void* AllocWorkspace(Device dev, size_t size, DLDataType type_hint) final;
   void FreeWorkspace(Device dev, void* data) final;
-
-  // Texture (image2d_t) alloca APIs
-  cl_mem AllocTexture(Device dev, size_t width, size_t height, DLDataType type_hint);
-  void* AllocTextureWorkspace(Device dev, size_t width, size_t height, DLDataType type_hint);
-  void FreeTextureWorkspace(Device dev, void* data);
+  void StreamSync(Device dev, TVMStreamHandle stream) {}
 
   /*!
    * \brief Get the thread local ThreadEntry
@@ -196,25 +148,13 @@ class SYCLWorkspace : public DeviceAPI {
 /*! \brief Thread local workspace */
 class SYCLThreadEntry {
  public:
-  // The kernel entry and version.
-  struct KTEntry {
-    // not support
-    std::string so_path;
-    void * so_handler = nullptr;
-    // timestamp used to recognize stale kernel
-    size_t version{0};
-  };
   /*! \brief The current device */
   Device device;
-  /*! \brief The thread-local kernel table */
-  std::vector<KTEntry> kernel_table;
   /*! \brief workspace pool */
   WorkspacePool pool;
-  /*! \brief texture pool */
-  TexturePool texture_pool;
   // constructor
   SYCLThreadEntry(DLDeviceType device_type, DeviceAPI* device_api)
-      : pool(device_type, device_api), texture_pool(device_type, device_api) {
+      : pool(device_type, device_api) {
     device.device_id = 0;
     device.device_type = device_type;
   }
@@ -224,38 +164,7 @@ class SYCLThreadEntry {
   static SYCLThreadEntry* ThreadLocal();
 };
 
-/*! \brief SYCL runtime buffer structure with tracked memory layout
-    TODO(tvm-team): Uncouple use of storage scope and data layout by using the transform_layout
-    schedule primitive to express the desired texture layout. This will require supporting Nd
-    indices in BufferLoad and BufferStore in CodegenSYCL, and ensuring Nd allocations for
-    texture are correctly routed to the AllocateTexture packed function in the SYCL DeviceAPI.
-*/
-struct syclBufferDescriptor {
-  enum class MemoryLayout {
-    /*! \brief One dimensional buffer in row-major layout*/
-    kBuffer1D,
-    /*! \brief Two dimensional texture w/ width = axis[-1]
-     *          e.g. image2d[height=NCH, width=W]
-     */
-    kImage2DActivation,
-    /*! \brief Two dimensional texture w/ height = axis[0]
-     *         e.g. image2d[height=O, width=IHW]
-     */
-    kImage2DWeight,
-    /*! \brief Two dimensional texture w/ height = axis[1]
-     *         e.g. image2d[height=NH, width=WC]
-     */
-    kImage2DNHWC,
-  };
-  syclBufferDescriptor() = default;
-  explicit syclBufferDescriptor(Optional<String> scope) : layout(MemoryLayoutFromScope(scope)) {}
-  static MemoryLayout MemoryLayoutFromScope(Optional<String> mem_scope);
-  static String ScopeFromMemoryLayout(MemoryLayout mem_scope);
-
-  cl_mem buffer{nullptr};
-  MemoryLayout layout{MemoryLayout::kBuffer1D};
-};
-}  // namespace cl
+}  // namespace syclT
 
 // Module to support thread-safe multi-device execution.
 // SYCL runtime is a bit tricky because clSetKernelArg is not thread-safe
@@ -264,14 +173,13 @@ struct syclBufferDescriptor {
 // The kernels are recycled when the module get destructed.
 class SYCLModuleNode : public ModuleNode {
  public:
-  // Kernel table reference entry.
-  struct KTRefEntry {
-    size_t kernel_id;
-    size_t version;
-  };
   explicit SYCLModuleNode(std::string data, std::string fmt,
                             std::unordered_map<std::string, FunctionInfo> fmap, std::string source)
-      : data_(data), fmt_(fmt), fmap_(fmap), source_(source) {}
+      : data_(data), fmt_(fmt), fmap_(fmap), source_(source) {
+        workspace_ = GetGlobalWorkspace();
+        workspace_->module_num++;           //the number of sycl_modules add 1
+        file_path = syclT::SYCLFilePath(workspace_->module_num);
+      }
   // destructor
   ~SYCLModuleNode();
 
@@ -280,7 +188,7 @@ class SYCLModuleNode : public ModuleNode {
    */
   virtual syclT::SYCLWorkspace* GetGlobalWorkspace();
 
-  const char* type_key() const final { return workspace_->type_key.c_str(); }
+  const char* type_key() const final { return "sycl"; }
 
   PackedFunc GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self) final;
   void SaveToFile(const std::string& file_name, const std::string& format) final;
@@ -300,91 +208,32 @@ class SYCLModuleNode : public ModuleNode {
   std::string fmt_;
   // function information table. Mapping from primitive name to .
   std::unordered_map<std::string, FunctionInfo> fmap_;
-  // Module local mutex
-  std::mutex build_lock_;
   // The SYCL source.
   std::string source_;
-  // kernel id cache. Mapping from primitive name to KTRefEntry.
-  std::unordered_map<std::string, KTRefEntry> kid_map_;
-  // kernels build so far.
-  std::vector<cl_kernel> kernels_;
   // parsed kernel data, Mapping from primitive name to kernel code.
   std::unordered_map<std::string, std::string> parsed_kernels_;
+  //id of SYCLModuleNode, start from 1, to detemine unique filename of source code and share library
+  syclT::SYCLFilePath file_path;
   // share library handler
   void * so_handler_ = nullptr;
 };
 
 /*! \brief SYCL timer node */
-/*
 class SYCLTimerNode : public TimerNode {
  public:
   // Timer start
-  virtual void Start() {
-    syclT::SYCLWorkspace::Global()->GetEventQueue(dev_).clear();
-    this->duration = 0;
-    // Very first call of Start() leads to the recreation of
-    // SYCL command queue in profiling mode. This allows to run profile after inference.
-    recreateCommandQueue();
-  }
-  // Timer stop
-  virtual void Stop() {
-    std::vector<cl_event> evt_queue = syclT::SYCLWorkspace::Global()->GetEventQueue(dev_);
-    cl_ulong start, end;
-    if (syclT::SYCLWorkspace::Global()->GetEventQueue(dev_).size() > 0) {
-      OPENCL_CALL(clWaitForEvents(1, &(syclT::SYCLWorkspace::Global()->GetEventQueue(dev_).back())));
-      for (auto& kevt : evt_queue) {
-        OPENCL_CALL(clGetEventProfilingInfo(kevt, CL_PROFILING_COMMAND_START, sizeof(cl_ulong),
-                                            &start, nullptr));
-        OPENCL_CALL(clGetEventProfilingInfo(kevt, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end,
-                                            nullptr));
-        this->duration += (end - start);
-      }
-    }
-  }
-  virtual int64_t SyncAndGetElapsedNanos() { return this->duration; }
-  // destructor
+  virtual void Start(){}
+  virtual void Stop(){}
+  virtual int64_t SyncAndGetElapsedNanos(){ return -1;}
   virtual ~SYCLTimerNode() {
-    // Profiling session ends, recreate clCommandQueue in non-profiling mode
-    // This will disable collection of cl_events in case of executing inference after profile
-    recreateCommandQueue();
+    
   }
-  // constructor
-  SYCLTimerNode() {}
-  explicit SYCLTimerNode(Device dev) : dev_(dev) {}
-
+  SYCLTimerNode() {
+  }
   static constexpr const char* _type_key = "SYCLTimerNode";
   TVM_DECLARE_FINAL_OBJECT_INFO(SYCLTimerNode, TimerNode);
-
- private:
-  int64_t duration;
-  Device dev_;
-
-  void recreateCommandQueue() {
-    LOG(WARNING) << "todo, not support now";
-    
-    cl_command_queue_properties prop;
-    if (!syclT::SYCLWorkspace::Global()->IsProfiling(dev_)) {
-      prop = CL_QUEUE_PROFILING_ENABLE;
-    } else {
-      prop = 0;
-    }
-
-    auto queue = syclT::SYCLWorkspace::Global()->GetQueue(dev_);
-
-    OPENCL_CALL(clFlush(queue));
-    OPENCL_CALL(clFinish(queue));
-    OPENCL_CALL(clReleaseCommandQueue(queue));
-
-    cl_int err_code;
-    sycl::device did = syclT::SYCLWorkspace::Global()->devices[dev_.device_id];
-    auto profiling_queue =
-        clCreateCommandQueue(syclT::SYCLWorkspace::Global()->context, did, prop, &err_code);
-    OPENCL_CHECK_ERROR(err_code);
-    syclT::SYCLWorkspace::Global()->queues[dev_.device_id] = profiling_queue;
-    
-  }
 };
-*/
+
 }  // namespace runtime
 }  // namespace tvm
 #endif  // TVM_RUNTIME_SYCL_SYCL_COMMON_H_
