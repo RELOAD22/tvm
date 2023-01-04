@@ -141,7 +141,7 @@ def callback_rocm_bitcode_path(rocdl_dir=None):
     bitcode_names = [
         "oclc_daz_opt_on",
         "ocml",
-        "hc",
+        # "hc",    # this does not exist in rocm 5.2, drop eventually
         "irif",  # this does not exist in rocm 3.9, drop eventually
         "ockl",
         "oclc_correctly_rounded_sqrt_off",
@@ -152,9 +152,12 @@ def callback_rocm_bitcode_path(rocdl_dir=None):
         "oclc_isa_version_803",  # todo (t-vi): an alternative might be to scan for the
         "oclc_isa_version_900",  #              isa version files (if the linker throws out
         "oclc_isa_version_906",  #              the unneeded ones or we filter for the arch we need)
+        "oclc_isa_version_908",
         "oclc_unsafe_math_off",
         "oclc_unsafe_math_on",
         "oclc_wavefrontsize64_on",
+        # "oclc_abi_version_400",
+        "oclc_abi_version_500",
     ]
 
     bitcode_files = []

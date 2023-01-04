@@ -317,6 +317,9 @@ void SYCLWorkspace::Init(const std::string& type_key, const std::string& device_
   for (auto &platform : platforms) {
     if(device_type == "gpu"){
         std::string platform_name = platform.get_info<sycl::info::platform::name>();
+        // neither NVIDIA CUDA BACKEND nor AMD HIP BACKEND
+        if(platform_name.find("BACKEND") == std::string::npos)
+          continue;
         std::vector<sycl::device> devices = platform.get_devices(sycl::info::device_type::gpu);
         if(devices.size() > 0){
           if(devices.size() > 1)

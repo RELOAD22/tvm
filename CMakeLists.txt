@@ -427,10 +427,10 @@ if(USE_GTEST)
   set(GTEST_ROOT "$ENV{GTEST_LIB}")
   if("${USE_GTEST}" STREQUAL "AUTO")
     # If USE_GTEST is AUTO, treat GTest as optional: enable if found.
-    find_package(GTest)
+    find_package(GTest PATHS /home/wzy/app/googletest-build-release-1.10)
   elseif("${USE_GTEST}" MATCHES ${IS_TRUE_PATTERN})
     # USE_GTEST is set to ON, TRUE, etc. Treat GTest as a required package.
-    find_package(GTest REQUIRED)
+    find_package(GTest REQUIRED PATHS /home/wzy/app/googletest-build-release-1.10)
   endif()
   if(GTEST_FOUND)
     if(NOT TARGET GTest::gmock)
@@ -447,11 +447,13 @@ if(USE_GTEST)
           message(FATAL_ERROR "Neither GTest::GTest nor GTest::gtest targets defined IMPORTED_LOCATION")
         endif()
       endif()
+      message(STATUS "Found GTEST_INCLUDE_DIRS=" ${GTEST_INCLUDE_DIRS})
+      message(STATUS "found GTEST_LIBRARY_DIRS="${GTEST_LIB_PATH} )
       get_filename_component(GTEST_LIB_DIR "${GTEST_LIB_PATH}" DIRECTORY)
       set_target_properties(GTest::gmock PROPERTIES
           IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.a")
     endif()
-
+    
     enable_testing()
     include(CTest)
   endif()

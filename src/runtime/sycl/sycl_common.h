@@ -123,7 +123,7 @@ inline const char* SYCLGetErrorString(std::error_code error_code) {
   {                                                           \
     try{                                                      \
       func;                                                   \
-    }catch(const sycl::exception const& e){                   \
+    }catch(sycl::exception const& e){                   \
       SYCL_CHECK_ERROR(e.code())                              \
       std::cout << "Caught synchronous SYCL exception:\n"     \
               << e.what() << std::endl;                       \
