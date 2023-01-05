@@ -82,14 +82,15 @@ typedef int64_t tvm_index_t;
 
 /*! \brief Extension device types in TVM */
 typedef enum {
-  kDLAOCL = 5,
-  kDLSDAccel = 6,
-  kOpenGL = 11,
-  kDLMicroDev = 13,
-  kDLHexagon = 14,
-  kDLWebGPU = 15,
+  // To help avoid accidental conflicts between `DLDeviceType`
+  // and this enumeration, start numbering the new enumerators
+  // a little higher than (currently) seems necessary.
+  kDLAOCL = 32,
+  kDLSDAccel ,
+  kOpenGL ,
+  kDLMicroDev ,
   // AddExtraTVMType which is not in DLPack here
-  kDLSYCL = 17
+  kDLSYCL ,
 } TVMDeviceExtType;
 
 /*!
