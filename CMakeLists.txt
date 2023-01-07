@@ -421,23 +421,26 @@ endif(USE_AOT_EXECUTOR)
 
 # Enable ctest if gtest is available
 if(USE_GTEST)
+  message(STATUS "Use GTest ... ")
   # Check env var for backward compatibility. A better way to specify package
   # locations is to use CMAKE_PREFIX_PATH or other standard cmake mechanism
   # (see cmake documentation for `find_package`).
   set(GTEST_ROOT "$ENV{GTEST_LIB}")
+  message(STATUS "GTest_ROOT ENV : $ENV{GTEST_LIB}")
   if("${USE_GTEST}" STREQUAL "AUTO")
     # If USE_GTEST is AUTO, treat GTest as optional: enable if found.
-    find_package(GTest PATHS /home/wzy/app/googletest-build-release-1.10)
+    find_package(GTest)
   elseif("${USE_GTEST}" MATCHES ${IS_TRUE_PATTERN})
     # USE_GTEST is set to ON, TRUE, etc. Treat GTest as a required package.
-    find_package(GTest REQUIRED PATHS /home/wzy/app/googletest-build-release-1.10)
+    find_package(GTest REQUIRED)
   endif()
   if(GTEST_FOUND)
     if(NOT TARGET GTest::gmock)
       # GMock is formally supported in CMake 3.20; for now, expect libgmock.a in the same directory,
       # and require that folks compiling against GTest::gmock also link against GTest::GTest
       # (for the includes dir).
-      add_library(GTest::gmock STATIC IMPORTED GLOBAL)
+      # add_library(GTest::gmock STATIC IMPORTED GLOBAL)
+      add_library(GTest::gmock SHARED IMPORTED GLOBAL)
       get_target_property(GTEST_LIB_PATH GTest::GTest IMPORTED_LOCATION)
       if("${GTEST_LIB_PATH}" STREQUAL "GTEST_LIB_PATH-NOTFOUND")
         # CMake >= 3.20 makes GTest::GTest into a compatibility target. The real import location is in
@@ -448,10 +451,12 @@ if(USE_GTEST)
         endif()
       endif()
       message(STATUS "Found GTEST_INCLUDE_DIRS=" ${GTEST_INCLUDE_DIRS})
-      message(STATUS "found GTEST_LIBRARY_DIRS="${GTEST_LIB_PATH} )
+      message(STATUS "Found GTEST_LIB_PATH=" ${GTEST_LIB_PATH} )
       get_filename_component(GTEST_LIB_DIR "${GTEST_LIB_PATH}" DIRECTORY)
+      message(STATUS "Found GTEST_LIBRARY_DIRS=" ${GTEST_LIB_DIR} )
       set_target_properties(GTest::gmock PROPERTIES
-          IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.a")
+          # IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.a")
+          IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.so")
     endif()
     
     enable_testing()
