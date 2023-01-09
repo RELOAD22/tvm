@@ -30,6 +30,8 @@
 #include <tvm/runtime/ndarray.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/profiling.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 /* There are many OpenCL platforms that do not yet support OpenCL 2.0,
  * hence we use 1.2 APIs, some of which are now deprecated.  In order
@@ -334,6 +336,26 @@ class SYCLModuleNode : public ModuleNode {
   // Initialize the programs
   void Init();
   
+  std::string getUUID(unsigned int len = 5){
+    std::string str;
+    unsigned char* buffer = new unsigned char[len+1];
+    char* uuid = new char [2*len+1];
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (read(fd, buffer, len) == len) {
+        
+        for(int i = 0;i < len;i++)
+            sprintf(uuid + i*2, "%02X",buffer[i]);
+        uuid[2*len] = '\0';
+        str = uuid;
+        
+    } else {
+        printf("Error: GetUnique %d\n", __LINE__);
+    }
+    delete [] buffer;
+    delete [] uuid;
+    return str;
+  }
+
 
  private:
   // The workspace, need to keep reference to use it in destructor.
@@ -357,7 +379,12 @@ class SYCLModuleNode : public ModuleNode {
   std::unordered_map<std::string, std::string> parsed_kernels_;
   // share library handler
   void * so_handler_ = nullptr;
+  // share library name
+  std::string dynamic_library_name;
+  // share library path
+  static const std::string library_path;
 };
+
 
 /*! \brief SYCL timer node */
 // TODO

@@ -38,6 +38,8 @@
 namespace tvm {
 namespace runtime {
 
+const std::string SYCLModuleNode::library_path = "/tmp/tvm_sycl";  
+
 class SYCLWrappedFunc {
  public:
   // initialize the SYCL function.
@@ -140,7 +142,7 @@ PackedFunc SYCLModuleNode::GetFunction(const std::string& name,
     }
   }
   if(so_handler_ == nullptr){
-    std::string sharedlibpath = "/tmp/tvm_sycl/kernels.so";
+    std::string sharedlibpath = library_path + "/sycl_" + dynamic_library_name + ".so";
     so_handler_ = dlopen(sharedlibpath.c_str(), RTLD_LAZY);
     ICHECK(so_handler_ != NULL) << "ERROR:"<<dlerror()<<":dlopen\n";
   }
@@ -200,11 +202,14 @@ void SYCLModuleNode::Init() {
   ICHECK(fmap_.size() == parsed_kernels_.size())
       << "The number of parsed kernel sources does not match the number of kernel functions";
   // compile kernels .so
-  if(access("/tmp/tvm_sycl", F_OK) == -1){
-    system("mkdir /tmp/tvm_sycl");
+  if(access(library_path.c_str(), F_OK) == -1){
+    system(("mkdir "+library_path).c_str());
   }
-  std::string filepath = "/tmp/tvm_sycl/kernels.cpp";
-  std::string sharedlibpath = "/tmp/tvm_sycl/kernels.so";
+
+  dynamic_library_name = getUUID();
+
+  std::string filepath = library_path + "/sycl_" + dynamic_library_name + ".cc";
+  std::string sharedlibpath = library_path + "/sycl_" + dynamic_library_name + ".so";
   std::ofstream kernels_file;
   kernels_file.open(filepath);
   kernels_file << GetSource("sycl");
