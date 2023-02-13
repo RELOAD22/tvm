@@ -48,6 +48,44 @@ namespace tvm {
 namespace runtime {
 namespace syclT {
 
+inline const char* SYCLGetErrorString(std::error_code error_code) {
+  sycl::errc error_code_value = static_cast<sycl::errc>(error_code.value());
+  switch(error_code_value){
+    case sycl::errc::success:
+      return "SUCCESS";
+    case sycl::errc::runtime:
+      return "RUNTIME ERROR";
+    case sycl::errc::kernel:
+      return "KERNEL ERROR";
+    case sycl::errc::accessor:
+      return "ACCESSOR ERROR";
+    case sycl::errc::nd_range:
+      return "NDRANGE ERROR";
+    case sycl::errc::event:
+      return "EVENT ERROR";
+    case sycl::errc::kernel_argument:
+      return "KERNEL ARGUMNET ERROR";
+    case sycl::errc::build:
+      return "BUILD ERROR";
+    case sycl::errc::invalid:
+      return "INVALID ERROR";
+    case sycl::errc::memory_allocation:
+      return "MEMORY ALLOCATION";
+    case sycl::errc::platform:
+      return "PLATFORM ERROR";
+    case sycl::errc::profiling:
+      return "PROFILING ERROR";
+    case sycl::errc::feature_not_supported:
+      return "FEATURE NOT SUPPORTED";
+    case sycl::errc::kernel_not_supported:
+      return "kERNEL NOT SUPPORTED";
+    case sycl::errc::backend_mismatch:
+      return "BACKEND MISMATCH";     
+  }
+}
+#define SYCL_CHECK_ERROR(e) \
+  { ICHECK(e == sycl::errc::success) << "SYCL Error, code=" << e << ": " << syclT::SYCLGetErrorString(e); }
+
 /*!
  * \brief Protected SYCL call
  * \param func Expression to call.
@@ -57,29 +95,52 @@ namespace syclT {
     try{                                                      \
       func;                                                   \
     }catch(const sycl::exception &e){                         \
-      /*针对USM等sycl runtime error，终止当前进程*/                            \
-      if(e.code() == sycl::errc::runtime){            \
-        std::cerr<< "Caught synchronous SYCL runtime exception:" <<e.what()<< std::endl;\
+      SYCL_CHECK_ERROR(e.code())                              \
+      /*针对USM等sycl runtime error，终止当前进程*/             \
+      if(e.code() == sycl::errc::runtime){                    \
         std::exit(0);                                         \
       }                                                       \
       std::cout<< "Caught synchronous SYCL exception:" <<e.what()<< std::endl;\
-      LOG(FATAL) << "Caught synchronous SYCL exception:" << e.what();  \
     }                                                         \
   }
 
 
-class SYCLFilePath {
+class SYCL_LIB_COMPILER {
   public:
-    SYCLFilePath() {}
-    SYCLFilePath(int module_id){
+    SYCL_LIB_COMPILER(int module_id){
       int pid = (int)getpid();
-      std::string filename = prefix + "/" + std::to_string(pid) + "_" +std::to_string(module_id);
-      source_file_path = filename + ".cpp";
+      std::string filename = prefix + "/sycl_" + std::to_string(pid) + "_" +std::to_string(module_id);
+      //std::string filename = prefix + "/sycl_" + getUUID();
+      source_file_path = filename + ".cc";
       shared_lib_path = filename + ".so";
+      command = sycl_compiler +" "+sycl_flags +" "+ filepath+" -o "+sharedlibpath;
     }
+
+    std::string sycl_compiler = SYCL_CXX_COMPILER;
+    std::string sycl_flags = SYCL_FLAGS;
     std::string prefix = SYCL_TEMP_FOLDER;
     std::string source_file_path;
     std::string shared_lib_path;
+    std::string command;
+  private:
+    std::string getUUID(unsigned int len = 5){
+      std::string str;
+      unsigned char* buffer = new unsigned char[len+1];
+      char* uuid = new char [2*len+1];
+      int fd = open("/dev/urandom", O_RDONLY);
+      if (read(fd, buffer, len) == len) {
+        for(int i = 0;i < len;i++)
+            sprintf(uuid + i*2, "%02X",buffer[i]);
+        uuid[2*len] = '\0';
+        str = uuid;
+        
+      } else {
+        printf("Error: GetUnique %d\n", __LINE__);
+      }
+      delete [] buffer;
+      delete [] uuid;
+      return str;
+    }
 };
 
 class SYCLThreadEntry;
@@ -111,6 +172,9 @@ class SYCLWorkspace : public DeviceAPI {
   int module_num = 0;
   // destructor
   ~SYCLWorkspace() {
+    for(auto queue : queues){
+      SYCL_CALL(queue.wait_and_throw());
+    }
   }
   // Initialzie the device.
   void Init(const std::string& device_type, const std::string& platform_name = "");
@@ -129,9 +193,11 @@ class SYCLWorkspace : public DeviceAPI {
   void GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) final;
   void* AllocDataSpace(Device dev, size_t size, size_t alignment, DLDataType type_hint) final;
   void FreeDataSpace(Device dev, void* ptr) final;
+  void* AllocDataSpace(Device dev, int ndim, const int64_t* shape, DLDataType dtype,
+                       Optional<String> mem_scope = NullOpt) final;
   void* AllocWorkspace(Device dev, size_t size, DLDataType type_hint) final;
   void FreeWorkspace(Device dev, void* data) final;
-  void StreamSync(Device dev, TVMStreamHandle stream) {}
+  void StreamSync(Device dev, TVMStreamHandle stream) final;
 
   /*!
    * \brief Get the thread local ThreadEntry
@@ -141,8 +207,8 @@ class SYCLWorkspace : public DeviceAPI {
   // get the global workspace
   static SYCLWorkspace* Global();
 
-  void CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) final;
-  std::vector<int> syclGetDeviceIDs(std::string device_type);
+  void CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) final;  
+                           
 };
 
 /*! \brief Thread local workspace */
@@ -178,7 +244,7 @@ class SYCLModuleNode : public ModuleNode {
       : data_(data), fmt_(fmt), fmap_(fmap), source_(source) {
         workspace_ = GetGlobalWorkspace();
         workspace_->module_num++;           //the number of sycl_modules add 1
-        file_path = syclT::SYCLFilePath(workspace_->module_num);
+        lib_compiler = syclT::SYCL_LIB_COMPILER(workspace_->module_num);
       }
   // destructor
   ~SYCLModuleNode();
@@ -196,7 +262,6 @@ class SYCLModuleNode : public ModuleNode {
   std::string GetSource(const std::string& format) final;
   // Initialize the programs
   void Init();
-  
 
  private:
   // The workspace, need to keep reference to use it in destructor.
@@ -213,9 +278,13 @@ class SYCLModuleNode : public ModuleNode {
   // parsed kernel data, Mapping from primitive name to kernel code.
   std::unordered_map<std::string, std::string> parsed_kernels_;
   //id of SYCLModuleNode, start from 1, to detemine unique filename of source code and share library
-  syclT::SYCLFilePath file_path;
+  syclT::SYCL_LIB_COMPILER lib_compiler;
   // share library handler
   void * so_handler_ = nullptr;
+  // share library name
+  std::string dynamic_library_name;
+  // share library path
+  static const std::string library_path;
 };
 
 /*! \brief SYCL timer node */

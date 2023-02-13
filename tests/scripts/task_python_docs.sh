@@ -78,6 +78,16 @@ IGNORED_WARNINGS=(
     'git describe'
     'scikit-learn version'
     'doing serial write'
+    $'WARNING: autodoc: failed to import module \'vta\'; the following exception was raised:'
+    $'WARNING: autodoc: failed to import function \'Environment\' from module \'vta\'; the following exception was raised:'
+    $'WARNING: autodoc: failed to import function \'get_env\' from module \'vta\'; the following exception was raised:'
+    $'WARNING: autodoc: failed to import function \'reconfig_runtime\' from module \'vta\'; the following exception was raised:'
+    $'WARNING: autodoc: failed to import function \'program_fpga\' from module \'vta\'; the following exception was raised:'
+    $'WARNING: autodoc: failed to import function \'build_config\' from module \'vta\'; the following exception was raised:'
+    $'WARNING: autodoc: failed to import function \'build\' from module \'vta\'; the following exception was raised:'
+    $'WARNING: autodoc: failed to import function \'lower\' from module \'vta\'; the following exception was raised:'
+    $'WARNING: toctree contains reference to nonexisting document \'topic/vta/tutorials/index\''
+    'WARNING: undefined label: vta-tutorials'
     'gen_gallery extension is not safe for parallel'
     'strategy:conv2d NHWC layout is not optimized for x86 with autotvm.'
     'strategy:depthwise_conv2d NHWC layout is not optimized for x86 with autotvm.'
@@ -88,6 +98,7 @@ IGNORED_WARNINGS=(
     'autotvm:Cannot find config for target=cuda -keys=cuda,gpu'
     # Warning is thrown during TFLite quantization for micro_train tutorial
     'absl:For model inputs containing unsupported operations which cannot be quantized, the `inference_input_type` attribute will default to the original type.'
+    'absl:Found untraced functions such as _jit_compiled_convolution_op'
 )
 
 JOINED_WARNINGS=$(join_by '|' "${IGNORED_WARNINGS[@]}")

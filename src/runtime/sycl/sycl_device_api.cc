@@ -36,7 +36,10 @@ SYCLWorkspace* SYCLWorkspace::Global() {
   return inst;
 }
 
-void SYCLWorkspace::SetDevice(Device dev) { GetThreadEntry()->device.device_id = dev.device_id; }
+void SYCLWorkspace::SetDevice(Device dev) { 
+  VLOG(1) << "Device id : " << dev.device_id << std::endl;
+  GetThreadEntry()->device.device_id = dev.device_id; 
+}
 
 void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
   this->Init();
@@ -120,10 +123,49 @@ void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
 void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
                                       DLDataType type_hint) {
   this->Init();
+  VLOG(1) << "sycl device allocating " << size << " bytes share memory";
+  VLOG(1) << "alloc sycl device id is " << dev.device_id << std::endl;
+  VLOG(1) << "alloc sycl device type is " << dev.device_type << std::endl;
+  VLOG(1) << "alloc sycl device alignment is " << alignment << std::endl;
+  // void* ret = sycl::malloc_shared(size, this->devices[dev.device_id], this->context);
+  void* ret = nullptr;
+  if(dev.device_type == kDLCPU ){
+    ret = sycl::aligned_alloc_host(alignment,size,this->contexts[dev.device_id]);
+  }else if(dev.device_type == kDLSYCL){
+    ret = sycl::aligned_alloc_device(alignment,size,this->devices[dev.device_id],this->contexts[dev.device_id]);
+  }else{
+    std::cerr<<"unknown device type : "<<dev.device_type<<std::endl;
+  }
+  // void* ret = sycl::aligned_alloc_shared(alignment,size,this->devices[dev.device_id],this->context);
+  if(ret == nullptr)
+    LOG(ERROR) << "allgn alloc memory failure!"<<std::endl;
+  VLOG(1) << "alloc sycl device pointer address is " << ret << std::endl;
+  return ret;
+}
+
+void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
+                                      DLDataType type_hint) {
+  this->Init();
   VLOG(1) << "allocating " << size << "bytes device memory";
   void* ret;
   SYCL_CALL(ret = sycl::malloc_device(size, this->GetQueue(dev)))
   return ret;
+}
+
+void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
+  SYCL_CALL(this->GetQueue(dev).wait_and_throw());
+  if(!IsSYCLDevice(dev)){
+    VLOG(1) << "free not sycl device : "<<dev.device_type;
+    LOG(WARNING) << "free not sycl device:"<<dev.device_type;
+    return ;
+  }else{
+    //IsSYCLDevice(dev) == true
+    VLOG(1) << "free sycl device id is " << dev.device_id << std::endl;
+    VLOG(1) << "free sycl device type is " << dev.device_type << std::endl;
+    VLOG(1) << "free sycl device pointer address is " << ptr << std::endl;
+  }
+  sycl::queue queue = this->GetQueue(dev);
+  sycl::free(ptr, queue);
 }
 
 void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
@@ -138,13 +180,23 @@ void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
 void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle stream) {
   size_t from_size = GetDataSize(*from);
   size_t to_size = GetDataSize(*to);
+  ICHECK(from_size == to_size) << "TVMArrayCopyFromTo: The size must exactly match";
+  ICHECK(IsContiguous(*from) && IsContiguous(*to))
+      << "CopyDataFromTo only support contiguous array for now";
   char* from_data = (char*)from->data;
   size_t from_offset = from->byte_offset;
   from_data += from_offset;
   char* to_data = (char*)to->data;
   size_t to_offset = to->byte_offset;
   to_data += to_offset;
-  ICHECK(from_size == to_size) << "TVMArrayCopyFromTo: The size must exactly match";
+
+  VLOG(1) << "from device " << from->device.device_id << " type : "<< from->device.device_type<<std::endl;
+  VLOG(1) << "to device " << to->device.device_id << " type : "<< to->device.device_type<<std::endl;
+  VLOG(1) << "before convert from device data pointer address : " << from_data << std::endl;
+  VLOG(1) << "before convert to device data pointer address : " << to_data << std::endl;
+  VLOG(1) << "after convert from device data pointer address : " << from_data+from_size << std::endl;
+  VLOG(1) << "after convert to device data pointer address : " << to_data+from_size << std::endl;
+  
   if (IsSYCLDevice(from->device) && IsSYCLDevice(to->device)){
     this->GetQueue(to->device).memcpy(to_data, from_data, from_size).wait();
   }else if (IsSYCLDevice(from->device) && to->device.device_type == kDLCPU){
@@ -154,6 +206,11 @@ void SYCLWorkspace::CopyDataFromTo(DLTensor* from, DLTensor* to, TVMStreamHandle
   }else {
     LOG(FATAL) << "Expect copy from/to SYCL or between SYCL";
   }
+}
+
+void SYCLWorkspace::StreamSync(Device dev, TVMStreamHandle stream) {
+  ICHECK(stream == nullptr);
+  SYCL_CALL(this->GetQueue(dev).wait_and_throw());
 }
 
 void* SYCLWorkspace::AllocWorkspace(Device dev, size_t size, DLDataType type_hint) {
@@ -168,19 +225,6 @@ typedef dmlc::ThreadLocalStore<SYCLThreadEntry> SYCLThreadStore;
 
 SYCLThreadEntry* SYCLThreadEntry::ThreadLocal() { return SYCLThreadStore::Get(); }
 
-std::vector<int> SYCLWorkspace::syclGetDeviceIDs(std::string device_type) {
-  sycl::info::device_type dtype = sycl::info::device_type::all;
-  if (device_type == "cpu") dtype = sycl::info::device_type::cpu;
-  if (device_type == "gpu") dtype = sycl::info::device_type::gpu;
-  if (device_type == "accelerator") dtype = sycl::info::device_type::accelerator;
-  std::vector<int> device_ids;
-  for(int id=0; id<this->devices.size(); id++){
-    if(this->devices[id].get_info<sycl::info::device::device_type>() == dtype){
-      device_ids.push_back(id);
-    }
-  }
-  return device_ids;
-}
 
 
 void SYCLWorkspace::Init(const std::string& device_type, const std::string& platform_name) {                     
@@ -191,23 +235,25 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
   // look for matched platform
   bool have_platform = false;
   auto platforms = sycl::platform::get_platforms();
-  if(platforms.size()==0){
-    LOG(WARNING) << "No SYCL platform matched given existing options ...";
-    return;
+  std::string target_platform = SYCL_GPU_TYPE; //from config.cmake, possible values: "nvidia", "amd".
+  std::string key;
+  if(target_platform=="nvidia"){
+    key = "CUDA";
+  }else if(target_platform=="amd"){
+    key = ""; // todo
   }
   for (auto &platform : platforms) {
-    std::string name = platform.get_info<sycl::info::platform::name>();
-    if (name.find(platform_name) == std::string::npos) {
-      continue;
-    }
-    if(name.find("CUDA") != std::string::npos){
-      std::vector<sycl::device> devices;
-      if(device_type=="gpu"){
-        devices = platform.get_devices(sycl::info::device_type::gpu);
-      }else{
-        LOG(WARNING) << "not support device";
-      }
-      if (devices.size() > 0){
+    if(device_type == "gpu"){
+      std::string platform_name = platform.get_info<sycl::info::platform::name>();
+      if (name.find(platform_name) == std::string::npos)
+        continue;
+      // neither NVIDIA CUDA BACKEND nor AMD HIP BACKEND
+      if(platform_name.find(key) == std::string::npos)
+        continue;
+      std::vector<sycl::device> devices = platform.get_devices(sycl::info::device_type::gpu);
+      if(devices.size() > 0){
+        if(devices.size() > 1)
+          LOG(WARNING) << "No Support Sub Devices";
         this->platform = platform;
         this->platform_name = name;
         this->devices = devices;
@@ -218,7 +264,7 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
     }
   }
   if (!have_platform) {
-    LOG(WARNING) << "No CUDA device";
+    LOG(ERROR) << "No valid gpu device/platform matched given existing options ...";
     return;
   }
   //create context、queues
@@ -229,7 +275,8 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
       try {
         std::rethrow_exception(e);
       } catch (const sycl::exception &e) {
-        LOG(FATAL) << "Caught asynchronous SYCL exception:" << e.what();
+        std::cout << "Caught asynchronous SYCL exception:\n"
+                  << e.what() << std::endl;
       }
     }
   };
@@ -238,6 +285,7 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
   }
   this->events.resize(this->devices.size());
   initialized_ = true;
+  VLOG(1) << "devices size : " << this->devices.size() << std::endl;
 }
 
 sycl::queue SYCLWorkspace::GetQueue(Device dev) {

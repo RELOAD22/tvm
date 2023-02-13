@@ -140,9 +140,7 @@ class PostOrderApplyNode : public SpaceGeneratorNode {
       result.clear();
       while (!stack.empty()) {
         // get the stack.top()
-        tir::Schedule sch;
-        Array<tir::BlockRV> blocks;
-        std::tie(sch, blocks) = stack.back();
+        auto [sch, blocks] = stack.back();
         stack.pop_back();
         // if all blocks are visited
         if (blocks.empty()) {
@@ -189,6 +187,15 @@ class PostOrderApplyNode : public SpaceGeneratorNode {
       }
     }
     return result;
+  }
+
+  SpaceGenerator Clone() const final {
+    ObjectPtr<PostOrderApplyNode> n = make_object<PostOrderApplyNode>(*this);
+    n->sch_rules_ = Array<ScheduleRule>();
+    for (const ScheduleRule& sch_rule : this->sch_rules_) {
+      n->sch_rules_.push_back(sch_rule->Clone());
+    }
+    return SpaceGenerator(n);
   }
   static constexpr const char* _type_key = "meta_schedule.PostOrderApply";
   TVM_DECLARE_FINAL_OBJECT_INFO(PostOrderApplyNode, SpaceGeneratorNode);

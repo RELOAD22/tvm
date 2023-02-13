@@ -15,13 +15,29 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# SYCL Module
+find_sycl(${USE_SYCL})
+
+if(SYCL_FOUND)
+  # always set the includedir when cuda is available
+  # avoid global retrigger of cmake
+  include_directories(SYSTEM ${SYCL_INCLUDE_DIRS})
+endif(SYCL_FOUND)
+
 if(USE_SYCL)
+  if (NOT SYCL_FOUND)
+    find_package(SYCL REQUIRED)
+  endif()
   message(STATUS "Build with SYCL support")
   tvm_file_glob(GLOB RUNTIME_SYCL_SRCS src/runtime/sycl/*.cc)
-  list(APPEND SYCL_RUNTIME_SRCS ${RUNTIME_SYCL_SRCS})
+  list(APPEND TVM_RUNTIME_LINKER_LIBS ${SYCL_LIBRARIES})
 
-  include_directories(BEFORE SYSTEM ${USE_SYCL}/include/sycl/)
-  list(APPEND TVM_RUNTIME_LINKER_LIBS ${USE_SYCL}/lib/)
+  if(DEFINED USE_SYCL_GTEST AND EXISTS ${USE_SYCL_GTEST})
+    file_glob_append(RUNTIME_SYCL_SRCS
+      "${CMAKE_SOURCE_DIR}/tests/cpp-runtime/sycl/*.cc"
+    )
+  endif()
+  list(APPEND SYCL_RUNTIME_SRCS ${RUNTIME_SYCL_SRCS})
 else()
   list(APPEND COMPILER_SRCS src/target/opt/build_sycl_off.cc)
 endif(USE_SYCL)

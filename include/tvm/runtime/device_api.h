@@ -248,6 +248,8 @@ inline const char* DeviceName(int type) {
       return "cuda";
     case kDLCUDAHost:
       return "cuda_host";
+    case kDLCUDAManaged:
+      return "cuda_managed";
     case kDLOpenCL:
       return "opencl";
     case kDLSDAccel:
@@ -262,14 +264,22 @@ inline const char* DeviceName(int type) {
       return "vpi";
     case kDLROCM:
       return "rocm";
+    case kDLROCMHost:
+      return "rocm_host";
     case kDLExtDev:
       return "ext_dev";
+    case kDLOneAPI:
+      return "oneapi";
     case kDLWebGPU:
       return "webgpu";
     case kDLHexagon:
       return "hexagon";
+    case kOpenGL:
+      return "opengl";
+    case kDLMicroDev:
+      return "microdev";
     case kDLSYCL:
-      return "sycl";
+      return "sycl";            
     default:
       LOG(FATAL) << "unknown type =" << type;
       return "Unknown";

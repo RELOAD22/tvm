@@ -156,21 +156,19 @@ PackedFunc SYCLModuleNode::GetFunction(const std::string& name,
   }
   if(so_handler_ == nullptr){
     // create the folder to store sycl temporary files
-    if(access(this->file_path.prefix.c_str(), F_OK) == -1){
-      std::string cmd = "mkdir "+this->file_path.prefix;
+    if(access(this->lib_compiler.prefix.c_str(), F_OK) == -1){
+      std::string cmd = "mkdir "+this->lib_compiler.prefix;
       system(cmd.c_str());
     }
     // sycl kernel source code
     std::ofstream kernels_file;
-    kernels_file.open(this->file_path.source_file_path);
+    kernels_file.open(this->lib_compiler.source_file_path);
     kernels_file << GetSource("sycl");
     kernels_file.close();
     // compile kernel source code to share libary
-    std::cout<<"[SYCL] Compile kernels source code(" + this->file_path.source_file_path + ") to share library."<<std::endl;
-    std::string cmd = std::string(SYCL_CXX_COMPILER) + " -std=c++17 -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -fPIC -shared "+\
-      this->file_path.source_file_path+" -o "+this->file_path.shared_lib_path;
-    VLOG(0) << cmd;
-    std::string exec_result = shell_exec(cmd).second;
+    std::cout<<"[SYCL] Compile kernels source code(" + this->lib_compiler.source_file_path + ") to share library."<<std::endl;
+    VLOG(0) << this->lib_compiler.command;
+    std::string exec_result = shell_exec(this->lib_compiler.command).second;
     // filter meaningless warning produced by llvm-sycl. For example
     /*warning: linking module 'llvm-sycl/lib/clang/16.0.0/../../clc/remangled-l64-signed_char.libspirv-nvptx64--nvidiacl.bc': 
     Linking two modules of different target triples: 
@@ -184,7 +182,7 @@ PackedFunc SYCLModuleNode::GetFunction(const std::string& name,
     }
     std::cout<< exec_result;
     // dlopen sycl share libary
-    so_handler_ = dlopen(this->file_path.shared_lib_path.c_str(), RTLD_LAZY);
+    so_handler_ = dlopen(this->lib_compiler.shared_lib_path.c_str(), RTLD_LAZY);
     ICHECK(so_handler_ != NULL) << "ERROR:"<<dlerror()<<":dlopen\n";
   }
   VLOG(0) << "SYCLModuleNode::begin initialize the wrapped func:";

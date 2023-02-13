@@ -11,6 +11,7 @@ include(cmake/utils/FindVulkan.cmake)
 include(cmake/utils/FindLLVM.cmake)
 include(cmake/utils/FindROCM.cmake)
 include(cmake/utils/FindEthosN.cmake)
+include(cmake/utils/FindSYCL.cmake)
 
 if(EXISTS ${CMAKE_CURRENT_BINARY_DIR}/config.cmake)
   include(${CMAKE_CURRENT_BINARY_DIR}/config.cmake)
@@ -307,6 +308,7 @@ tvm_file_glob(GLOB_RECURSE RELAY_PASS_SRCS
 tvm_file_glob(GLOB RELAY_BACKEND_SRCS
     src/relay/backend/*.cc
     src/relay/backend/vm/*.cc
+    src/relay/backend/aot/*.cc
     )
 tvm_file_glob(GLOB_RECURSE RELAY_IR_SRCS
     src/relay/ir/*.cc
@@ -419,10 +421,12 @@ endif(USE_AOT_EXECUTOR)
 
 # Enable ctest if gtest is available
 if(USE_GTEST)
+  message(STATUS "Use GTest ... ")
   # Check env var for backward compatibility. A better way to specify package
   # locations is to use CMAKE_PREFIX_PATH or other standard cmake mechanism
   # (see cmake documentation for `find_package`).
   set(GTEST_ROOT "$ENV{GTEST_LIB}")
+  message(STATUS "GTest_ROOT ENV : $ENV{GTEST_LIB}")
   if("${USE_GTEST}" STREQUAL "AUTO")
     # If USE_GTEST is AUTO, treat GTest as optional: enable if found.
     find_package(GTest)
@@ -435,7 +439,8 @@ if(USE_GTEST)
       # GMock is formally supported in CMake 3.20; for now, expect libgmock.a in the same directory,
       # and require that folks compiling against GTest::gmock also link against GTest::GTest
       # (for the includes dir).
-      add_library(GTest::gmock STATIC IMPORTED GLOBAL)
+      # add_library(GTest::gmock STATIC IMPORTED GLOBAL)
+      add_library(GTest::gmock SHARED IMPORTED GLOBAL)
       get_target_property(GTEST_LIB_PATH GTest::GTest IMPORTED_LOCATION)
       if("${GTEST_LIB_PATH}" STREQUAL "GTEST_LIB_PATH-NOTFOUND")
         # CMake >= 3.20 makes GTest::GTest into a compatibility target. The real import location is in
@@ -445,11 +450,15 @@ if(USE_GTEST)
           message(FATAL_ERROR "Neither GTest::GTest nor GTest::gtest targets defined IMPORTED_LOCATION")
         endif()
       endif()
+      message(STATUS "Found GTEST_INCLUDE_DIRS=" ${GTEST_INCLUDE_DIRS})
+      message(STATUS "Found GTEST_LIB_PATH=" ${GTEST_LIB_PATH} )
       get_filename_component(GTEST_LIB_DIR "${GTEST_LIB_PATH}" DIRECTORY)
+      message(STATUS "Found GTEST_LIBRARY_DIRS=" ${GTEST_LIB_DIR} )
       set_target_properties(GTest::gmock PROPERTIES
-          IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.a")
+          # IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.a")
+          IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.so")
     endif()
-
+    
     enable_testing()
     include(CTest)
   endif()
@@ -462,7 +471,7 @@ if(USE_PIPELINE_EXECUTOR)
 endif(USE_PIPELINE_EXECUTOR)
 
 # Module rules
-include(cmake/modules/VTA.cmake)
+# include(cmake/modules/VTA.cmake)
 include(cmake/modules/StandaloneCrt.cmake)
 include(cmake/modules/Zephyr.cmake)
 include(cmake/modules/Arduino.cmake)
@@ -528,8 +537,13 @@ add_library(tvm_libinfo_objs OBJECT ${LIBINFO_FILE})
 if(USE_SYCL)
   set(CMAKE_CXX_COMPILER "${USE_SYCL}/bin/clang++")
   add_definitions(-DSYCL_CXX_COMPILER="${USE_SYCL}/bin/clang++")
+  add_definitions(-DSYCL_GPU_TYPE="${SYCL_GPU}")
   add_definitions(-DSYCL_TEMP_FOLDER="${SYCL_TEMP_FOLDER}")
-  set(CMAKE_CXX_FLAGS "-fsycl -fsycl-targets=nvptx64-nvidia-cuda ${CMAKE_CXX_FLAGS}")
+  if(SYCL_GPU STREQUAL "nvidia")
+    set(CMAKE_CXX_FLAGS "-fsycl -fsycl-targets=nvptx64-nvidia-cuda ${CMAKE_CXX_FLAGS}")
+  elseif(SYCL_GPU STREQUAL "amd")
+    set(CMAKE_CXX_FLAGS "-fsycl -fsycl-targets=amdgcn-amd-amdhsa -Xsycl-target-backend --offload-arch=gfx908 ${CMAKE_CXX_FLAGS}")
+  endif()
   add_library(tvm_sycl_runtime_objs OBJECT ${SYCL_RUNTIME_SRCS})
   add_library(tvm SHARED $<TARGET_OBJECTS:tvm_objs> $<TARGET_OBJECTS:tvm_runtime_objs> $<TARGET_OBJECTS:tvm_sycl_runtime_objs> $<TARGET_OBJECTS:tvm_libinfo_objs>)
 else()
@@ -643,6 +657,20 @@ if(USE_OPENCL AND DEFINED USE_OPENCL_GTEST AND EXISTS ${USE_OPENCL_GTEST})
   include_directories("${USE_OPENCL_GTEST}/include")
   include_directories("${USE_OPENCL_GTEST}/googletest/include")
   message(STATUS "Found OpenCL gtest at ${USE_OPENCL_GTEST}")
+endif()
+
+if(USE_SYCL AND DEFINED USE_SYCL_GTEST AND EXISTS ${USE_SYCL_GTEST})
+  include(FetchContent)
+  FetchContent_Declare(googletest SOURCE_DIR "${USE_SYCL_GTEST}")
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  target_include_directories(tvm_runtime PRIVATE "${USE_SYCL_GTEST}/lib")
+  target_include_directories(tvm PRIVATE "${GTEST_LIBS}/lib")
+  target_link_libraries(tvm_runtime PUBLIC gtest gtest_main)
+  target_link_libraries(tvm PUBLIC gtest gtest_main)
+  include_directories("${USE_SYCL_GTEST}/include")
+  message(STATUS "Using SYCL gtest include at ${USE_SYCL_GTEST}/include")
+  message(STATUS "Using SYCL gtest library at ${USE_SYCL_GTEST}/lib")
 endif()
 
 # Set flags for clang
