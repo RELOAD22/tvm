@@ -169,17 +169,6 @@ PackedFunc SYCLModuleNode::GetFunction(const std::string& name,
     std::cout<<"[SYCL] Compile kernels source code(" + this->lib_compiler.source_file_path + ") to share library."<<std::endl;
     VLOG(0) << this->lib_compiler.command;
     std::string exec_result = shell_exec(this->lib_compiler.command).second;
-    // filter meaningless warning produced by llvm-sycl. For example
-    /*warning: linking module 'llvm-sycl/lib/clang/16.0.0/../../clc/remangled-l64-signed_char.libspirv-nvptx64--nvidiacl.bc': 
-    Linking two modules of different target triples: 
-    'llvm-sycl/lib/clang/16.0.0/../../clc/remangled-l64-signed_char.libspirv-nvptx64--nvidiacl.bc' is 'nvptx64-unknown-nvidiacl' 
-    whereas 'tvm_sycl/18310_1.cpp' is 'nvptx64-nvidia-cuda'
-    [-Wlinker-warnings]
-    1 warning generated. */
-    if(exec_result.find("nvptx64-unknown-nvidiacl") != std::string::npos){
-      exec_result = exec_result.substr(exec_result.find("1 warning generated."));
-      exec_result = exec_result.substr(exec_result.find("\n")+1);
-    }
     std::cout<< exec_result;
     // dlopen sycl share libary
     so_handler_ = dlopen(this->lib_compiler.shared_lib_path.c_str(), RTLD_LAZY);

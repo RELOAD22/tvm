@@ -34,6 +34,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <fcntl.h>  //open("/dev/urandom", O_RDONLY);
 #ifdef _WIN32
     #include <process.h>
 #else
@@ -107,13 +108,14 @@ inline const char* SYCLGetErrorString(std::error_code error_code) {
 
 class SYCL_LIB_COMPILER {
   public:
+    SYCL_LIB_COMPILER(){}
     SYCL_LIB_COMPILER(int module_id){
       int pid = (int)getpid();
       std::string filename = prefix + "/sycl_" + std::to_string(pid) + "_" +std::to_string(module_id);
       //std::string filename = prefix + "/sycl_" + getUUID();
       source_file_path = filename + ".cc";
       shared_lib_path = filename + ".so";
-      command = sycl_compiler +" "+sycl_flags +" "+ filepath+" -o "+sharedlibpath;
+      command = sycl_compiler +" "+sycl_flags +" "+ source_file_path +" -o "+shared_lib_path;
     }
 
     std::string sycl_compiler = SYCL_CXX_COMPILER;
@@ -193,8 +195,6 @@ class SYCLWorkspace : public DeviceAPI {
   void GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) final;
   void* AllocDataSpace(Device dev, size_t size, size_t alignment, DLDataType type_hint) final;
   void FreeDataSpace(Device dev, void* ptr) final;
-  void* AllocDataSpace(Device dev, int ndim, const int64_t* shape, DLDataType dtype,
-                       Optional<String> mem_scope = NullOpt) final;
   void* AllocWorkspace(Device dev, size_t size, DLDataType type_hint) final;
   void FreeWorkspace(Device dev, void* data) final;
   void StreamSync(Device dev, TVMStreamHandle stream) final;

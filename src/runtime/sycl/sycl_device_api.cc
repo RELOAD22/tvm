@@ -123,57 +123,27 @@ void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
 void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
                                       DLDataType type_hint) {
   this->Init();
-  VLOG(1) << "sycl device allocating " << size << " bytes share memory";
-  VLOG(1) << "alloc sycl device id is " << dev.device_id << std::endl;
-  VLOG(1) << "alloc sycl device type is " << dev.device_type << std::endl;
-  VLOG(1) << "alloc sycl device alignment is " << alignment << std::endl;
-  // void* ret = sycl::malloc_shared(size, this->devices[dev.device_id], this->context);
   void* ret = nullptr;
-  if(dev.device_type == kDLCPU ){
-    ret = sycl::aligned_alloc_host(alignment,size,this->contexts[dev.device_id]);
-  }else if(dev.device_type == kDLSYCL){
-    ret = sycl::aligned_alloc_device(alignment,size,this->devices[dev.device_id],this->contexts[dev.device_id]);
+  if(IsSYCLDevice(dev)){
+    this->GetQueue(dev).wait_and_throw();
+    VLOG(1) << "allocating " << size << "bytes device memory, ";
+    SYCL_CALL(ret = sycl::malloc_device(size, this->GetQueue(dev)))
   }else{
-    std::cerr<<"unknown device type : "<<dev.device_type<<std::endl;
+    LOG(ERROR) << "allocate in not sycl device:"<<dev.device_type;
   }
-  // void* ret = sycl::aligned_alloc_shared(alignment,size,this->devices[dev.device_id],this->context);
   if(ret == nullptr)
-    LOG(ERROR) << "allgn alloc memory failure!"<<std::endl;
-  VLOG(1) << "alloc sycl device pointer address is " << ret << std::endl;
+    LOG(ERROR) << "allocate sycl device memory failure!"<<std::endl;
+  VLOG(1) << "allocate sycl device memory from "<< ret << std::endl;
   return ret;
-}
-
-void* SYCLWorkspace::AllocDataSpace(Device dev, size_t size, size_t alignment,
-                                      DLDataType type_hint) {
-  this->Init();
-  VLOG(1) << "allocating " << size << "bytes device memory";
-  void* ret;
-  SYCL_CALL(ret = sycl::malloc_device(size, this->GetQueue(dev)))
-  return ret;
-}
-
-void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
-  SYCL_CALL(this->GetQueue(dev).wait_and_throw());
-  if(!IsSYCLDevice(dev)){
-    VLOG(1) << "free not sycl device : "<<dev.device_type;
-    LOG(WARNING) << "free not sycl device:"<<dev.device_type;
-    return ;
-  }else{
-    //IsSYCLDevice(dev) == true
-    VLOG(1) << "free sycl device id is " << dev.device_id << std::endl;
-    VLOG(1) << "free sycl device type is " << dev.device_type << std::endl;
-    VLOG(1) << "free sycl device pointer address is " << ptr << std::endl;
-  }
-  sycl::queue queue = this->GetQueue(dev);
-  sycl::free(ptr, queue);
 }
 
 void SYCLWorkspace::FreeDataSpace(Device dev, void* ptr) {
   if(IsSYCLDevice(dev)){
-    this->GetQueue(dev).wait();
+    this->GetQueue(dev).wait_and_throw();
+    VLOG(1) << "free sycl device memory from " << ptr << std::endl;
     SYCL_CALL(sycl::free(ptr, this->GetQueue(dev)))
   }else{
-    LOG(WARNING) << "not sycl device:"<<dev.device_type;
+    LOG(ERROR) << "free in not sycl device:"<<dev.device_type;
   }
 }
 
@@ -244,11 +214,11 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
   }
   for (auto &platform : platforms) {
     if(device_type == "gpu"){
-      std::string platform_name = platform.get_info<sycl::info::platform::name>();
+      std::string name = platform.get_info<sycl::info::platform::name>();
       if (name.find(platform_name) == std::string::npos)
         continue;
       // neither NVIDIA CUDA BACKEND nor AMD HIP BACKEND
-      if(platform_name.find(key) == std::string::npos)
+      if(name.find(key) == std::string::npos)
         continue;
       std::vector<sycl::device> devices = platform.get_devices(sycl::info::device_type::gpu);
       if(devices.size() > 0){
