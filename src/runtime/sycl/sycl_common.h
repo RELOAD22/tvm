@@ -96,11 +96,11 @@ inline const char* SYCLGetErrorString(std::error_code error_code) {
     try{                                                      \
       func;                                                   \
     }catch(const sycl::exception &e){                         \
-      SYCL_CHECK_ERROR(e.code())                              \
       /*针对USM等sycl runtime error，终止当前进程*/             \
       if(e.code() == sycl::errc::runtime){                    \
         std::exit(0);                                         \
       }                                                       \
+      SYCL_CHECK_ERROR(e.code())                              \
       std::cout<< "Caught synchronous SYCL exception:" <<e.what()<< std::endl;\
     }                                                         \
   }
