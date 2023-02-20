@@ -291,9 +291,15 @@ class SYCLModuleNode : public ModuleNode {
 class SYCLTimerNode : public TimerNode {
  public:
   // Timer start
-  virtual void Start(){}
-  virtual void Stop(){}
-  virtual int64_t SyncAndGetElapsedNanos(){ return -1;}
+  virtual void Start(){
+    this->start = std::chrono::steady_clock::now();
+  }
+  virtual void Stop(){
+    this->end = std::chrono::steady_clock::now();
+  }
+  virtual int64_t SyncAndGetElapsedNanos(){ 
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(this->end - this->start).count();
+  }
   virtual ~SYCLTimerNode() {
     
   }
@@ -301,6 +307,8 @@ class SYCLTimerNode : public TimerNode {
   }
   static constexpr const char* _type_key = "SYCLTimerNode";
   TVM_DECLARE_FINAL_OBJECT_INFO(SYCLTimerNode, TimerNode);
+ private:
+  std::chrono::steady_clock::time_point start, end;
 };
 
 }  // namespace runtime
