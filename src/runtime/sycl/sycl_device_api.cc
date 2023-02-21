@@ -210,8 +210,18 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
   if(target_platform=="nvidia"){
     key = "CUDA";
   }else if(target_platform=="amd"){
-    key = ""; // todo
+    key = "HIP"; // todo
   }
+  auto exception_handler = [](sycl::exception_list exceptions) {
+    for (const std::exception_ptr &e : exceptions) {
+      try {
+        std::rethrow_exception(e);
+      } catch (const sycl::exception &e) {
+        std::cout << "Caught asynchronous SYCL exception:\n"
+                  << e.what() << std::endl;
+      }
+    }
+  };
   for (auto &platform : platforms) {
     if(device_type == "gpu"){
       std::string name = platform.get_info<sycl::info::platform::name>();
@@ -224,12 +234,17 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
       if(devices.size() > 0){
         if(devices.size() > 1)
           LOG(WARNING) << "No Support Sub Devices";
-        this->platform = platform;
-        this->platform_name = name;
-        this->devices = devices;
+        this->platforms.push_back(platform);
+        this->devices.insert(this->devices.end(),devices.begin(),devices.end());
+        this->platform_names.push_back(platform_name);
         this->device_type = device_type;
-        have_platform = true;
-        break;
+        sycl::device dev = devices[0];
+        //create context and queue
+        sycl::context ctx = sycl::context(dev,exception_handler);
+        this->contexts.push_back(ctx);
+        sycl::queue queue = sycl::queue(ctx,devices[0]);
+        this->queues.push_back(queue);
+        have_platform = true;          
       }
     }
   }
@@ -237,22 +252,7 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
     LOG(ERROR) << "No valid gpu device/platform matched given existing options ...";
     return;
   }
-  //create context、queues
-  this->context = sycl::context(this->platform);
-
-  auto exception_handler = [](sycl::exception_list exceptions) {
-    for (const std::exception_ptr &e : exceptions) {
-      try {
-        std::rethrow_exception(e);
-      } catch (const sycl::exception &e) {
-        std::cout << "Caught asynchronous SYCL exception:\n"
-                  << e.what() << std::endl;
-      }
-    }
-  };
-  for (size_t i = 0; i < this->devices.size(); ++i) {
-    this->queues.push_back(sycl::queue(this->devices[i], exception_handler));
-  }
+  
   this->events.resize(this->devices.size());
   initialized_ = true;
   VLOG(1) << "devices size : " << this->devices.size() << std::endl;

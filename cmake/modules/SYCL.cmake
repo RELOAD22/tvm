@@ -22,6 +22,7 @@ if(SYCL_FOUND)
   # always set the includedir when cuda is available
   # avoid global retrigger of cmake
   include_directories(SYSTEM ${SYCL_INCLUDE_DIRS})
+  include_directories(SYSTEM ${SYCL_INCLUDE_DIRS}/sycl)
 endif(SYCL_FOUND)
 
 if(USE_SYCL)

@@ -72,6 +72,9 @@ set(USE_SYCL OFF)
 # GPU type, used to set sycl compile option.
 # Possible values: "nvidia", "amd".
 set(SYCL_GPU "nvidia")
+set(USE_SYCL_CUDA "nvptx64-nvidia-cuda")
+set(USE_SYCL_HIP "amdgcn-amd-amdhsa -Xsycl-target-backend --offload-arch=gfx906")
+
 # if enable SYCL runtime, please set storage path for sycl temporary files. The default path is "/tmp/tvm_sycl/".
 set(SYCL_TEMP_FOLDER "/tmp/tvm_sycl")
 

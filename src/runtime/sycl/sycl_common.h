@@ -24,7 +24,7 @@
 #ifndef TVM_RUNTIME_SYCL_SYCL_COMMON_H_
 #define TVM_RUNTIME_SYCL_SYCL_COMMON_H_
 
-#include <CL/sycl.hpp>
+#include <sycl/sycl.hpp>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/profiling.h>
@@ -153,11 +153,11 @@ class SYCLThreadEntry;
 class SYCLWorkspace : public DeviceAPI {
  public:
   // global platform
-  sycl::platform platform;
+  std::vector<sycl::platform> platforms;
   // global platform name
-  std::string platform_name;
+  std::vector<std::string> platform_names;
   // global context of this process
-  sycl::context context;
+  std::vector<sycl::context> contexts;
   // whether the workspace it initialized.
   bool initialized_{false};
   // the device type
