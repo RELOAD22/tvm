@@ -530,6 +530,44 @@ void CodeGenSYCL::PrintVecElemStore(const std::string& vec, DataType t, int i,
   stream << vec << "[" << std::hex << i << "]" << " = " << value << ";\n" << std::dec;
 }
 
+void CodeGenSYCL::PrintVecElemLoadExpr(DataType t, int i, const std::string& value, std::ostream& os) {
+  ICHECK_GT(t.lanes(), 1);
+  /*
+  if (t.bits() == 8 && (t.is_int() || t.is_uint())) {
+    if (i != 0) {
+      os << "|";
+    }
+    os << "((0x000000ff << " << i * 8 << ") & (" << value << " << " << i * 8 << "))";
+    return;
+  }
+  */
+
+  if (i == 0) {
+    os << "((";
+    PrintType(t, os);
+    os << "){";
+  }
+  os << value;
+  if (i != t.lanes() - 1) {
+    os << ",";
+  } else {
+    os << "})";
+  }
+  return;
+}
+
+void CodeGenSYCL::VisitExpr_(const RampNode* op, std::ostream& os) {  // NOLINT(*)
+  // constraint of current logic
+  ICHECK_EQ(op->base.dtype(), DataType::Int(32));
+  os << "((int" << op->lanes << "){";
+  for (int i = 0; i < op->lanes; i++) {
+    os << "(" << PrintExpr(op->base) << ")"
+       << "+(" << PrintExpr(op->stride) << "*" << i << ")";
+    if (i != op->lanes - 1) os << ", ";
+  }
+  os << "})";
+}
+
 runtime::Module BuildSYCL(IRModule mod, Target target) {
   using tvm::runtime::Registry;
   bool output_ssa = false;

@@ -166,6 +166,7 @@ PackedFunc SYCLModuleNode::GetFunction(const std::string& name,
     kernels_file << GetSource("sycl");
     kernels_file.close();
     // compile kernel source code to share libary
+    //this->lib_compiler.import_source("/home/ly/tmp/tvm_sycl/sycl_16282_1");
     std::cout<<"[SYCL] Compile kernels source code(" + this->lib_compiler.source_file_path + ") to share library."<<std::endl;
     VLOG(0) << this->lib_compiler.command;
     std::string exec_result = shell_exec(this->lib_compiler.command).second;

@@ -58,6 +58,7 @@ class CodeGenSYCL final : public CodeGenC {
   void PrintVecElemLoad(const std::string& vec, DataType t, int i,
                         std::ostream& os) final;  // NOLINT(*)
   void PrintVecElemStore(const std::string& vec, DataType t, int i, const std::string& value) final;
+  void PrintVecElemLoadExpr(DataType t, int i, const std::string& value, std::ostream& os) final;
   std::string CastFromTo(std::string value, DataType from, DataType target);     // NOLINT(*)
   std::string CastTo(std::string value, DataType target);                        // NOLINT(*)
 
@@ -73,6 +74,7 @@ class CodeGenSYCL final : public CodeGenC {
   void VisitExpr_(const AndNode* op, std::ostream& os) final;
   void VisitExpr_(const OrNode* op, std::ostream& os) final;
   void VisitExpr_(const SelectNode* op, std::ostream& os) final;
+  void VisitExpr_(const RampNode* op, std::ostream& os) final;
 
  private:
   // whether enable fp16 and fp64 extension

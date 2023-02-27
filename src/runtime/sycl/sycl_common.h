@@ -117,6 +117,11 @@ class SYCL_LIB_COMPILER {
       shared_lib_path = filename + ".so";
       command = sycl_compiler +" "+sycl_flags +" "+ source_file_path +" -o "+shared_lib_path;
     }
+    void import_source(std::string import_path){
+      source_file_path = import_path+ ".cc";
+      shared_lib_path = import_path + ".so";
+      command = sycl_compiler +" "+sycl_flags +" "+ source_file_path +" -o "+shared_lib_path;
+    }
 
     std::string sycl_compiler = SYCL_CXX_COMPILER;
     std::string sycl_flags = SYCL_FLAGS;
