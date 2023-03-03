@@ -205,12 +205,16 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
   // look for matched platform
   bool have_platform = false;
   auto platforms = sycl::platform::get_platforms();
-  std::string target_platform = SYCL_GPU_TYPE; //from config.cmake, possible values: "nvidia", "amd".
+  std::string target_platform = SYCL_GPU_TYPE; //from config.cmake, possible values: "nvidia", "amd","intel".
   std::string key;
+  // LOG(INFO)<<"target_platform is "<<target_platform;
+  // LOG(INFO)<<"platform_name is "<<platform_name<<std::endl;
   if(target_platform=="nvidia"){
     key = "CUDA";
   }else if(target_platform=="amd"){
     key = "HIP"; // todo
+  }else if(target_platform == "intel"){
+    key = "Level-Zero";
   }
   auto exception_handler = [](sycl::exception_list exceptions) {
     for (const std::exception_ptr &e : exceptions) {
@@ -227,24 +231,37 @@ void SYCLWorkspace::Init(const std::string& device_type, const std::string& plat
       std::string name = platform.get_info<sycl::info::platform::name>();
       if (name.find(platform_name) == std::string::npos)
         continue;
-      // neither NVIDIA CUDA BACKEND nor AMD HIP BACKEND
+      // neither NVIDIA CUDA BACKEND nor AMD HIP BACKEND nor Intel Level-Zero
       if(name.find(key) == std::string::npos)
         continue;
       std::vector<sycl::device> devices = platform.get_devices(sycl::info::device_type::gpu);
       if(devices.size() > 0){
-        if(devices.size() > 1)
-          LOG(WARNING) << "No Support Sub Devices";
+        // Intel Level-Zero 
+        /**
+        Platform name : Intel(R) Level-Zero
+        Platform profile : FULL_PROFILE
+        Platform version : 1.1
+        Platform vendor : Intel(R) Corporation
+        Platform object address : 0xf2eff0
+          Device: Intel(R) Graphics [0x020a]
+          Device vendor id: 32902
+          Device object address : 0xf2f2c0
+          Device: Intel(R) Graphics [0x020a]
+          Device vendor id: 32902
+          Device object address : 0xf2f2d0
+        */
         this->platforms.push_back(platform);
         this->devices.insert(this->devices.end(),devices.begin(),devices.end());
         this->platform_names.push_back(platform_name);
         this->device_type = device_type;
-        sycl::device dev = devices[0];
-        //create context and queue
-        sycl::context ctx = sycl::context(dev,exception_handler);
-        this->contexts.push_back(ctx);
-        sycl::queue queue = sycl::queue(ctx,devices[0]);
-        this->queues.push_back(queue);
-        have_platform = true;          
+        for(sycl::device dev : devices){
+          //create context and queue
+          sycl::context ctx = sycl::context(dev,exception_handler);
+          this->contexts.push_back(ctx);
+          sycl::queue queue = sycl::queue(ctx,dev);
+          this->queues.push_back(queue);
+          have_platform = true; 
+        }
       }
     }
   }
