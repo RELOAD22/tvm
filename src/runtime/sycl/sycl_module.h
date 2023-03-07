@@ -43,6 +43,8 @@ namespace runtime {
  */
 Module SYCLModuleCreate(std::string data, std::string fmt,
                           std::unordered_map<std::string, FunctionInfo> fmap, std::string source);
+Module SYCLModuleCreate(std::string data, std::string fmt,
+                          std::unordered_map<std::string, FunctionInfo> fmap, std::string source, std::string path_key);
 }  // namespace runtime
 }  // namespace tvm
 #endif  // TVM_RUNTIME_SYCL_SYCL_MODULE_H_

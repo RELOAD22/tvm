@@ -154,46 +154,11 @@ PackedFunc SYCLModuleNode::GetFunction(const std::string& name,
       arg_size[i] = bits / 8;
     }
   }
-  if(so_handler_ == nullptr){
-    // create the folder to store sycl temporary files
-    if(access(this->lib_compiler.prefix.c_str(), F_OK) == -1){
-      std::string cmd = "mkdir "+this->lib_compiler.prefix;
-      system(cmd.c_str());
-    }
-    // sycl kernel source code
-    std::ofstream kernels_file;
-    kernels_file.open(this->lib_compiler.source_file_path);
-    kernels_file << GetSource("sycl");
-    kernels_file.close();
-    // compile kernel source code to share libary
-    //this->lib_compiler.import_source("/home/ly/tmp/tvm_sycl/sycl_16282_1");
-    std::cout<<"[SYCL] Compile kernels source code(" + this->lib_compiler.source_file_path + ") to share library."<<std::endl;
-    VLOG(0) << this->lib_compiler.command;
-    std::string exec_result = shell_exec(this->lib_compiler.command).second;
-    std::cout<< exec_result;
-    // dlopen sycl share libary
-    so_handler_ = dlopen(this->lib_compiler.shared_lib_path.c_str(), RTLD_LAZY);
-    ICHECK(so_handler_ != NULL) << "ERROR:"<<dlerror()<<":dlopen\n";
-  }
   VLOG(0) << "SYCLModuleNode::begin initialize the wrapped func:";
   // initialize the wrapped func.
   f.Init(this, name, info.arg_types.size(), info.launch_param_tags, so_handler_);
   VLOG(0) << "SYCLModuleNode::finish initialize the wrapped func:";
   return PackFuncVoidAddr(f, info.arg_types);
-}
-
-void SYCLModuleNode::SaveToFile(const std::string& file_name, const std::string& format) {
-  std::string fmt = GetFileFormat(file_name, format);
-  ICHECK_EQ(fmt, fmt_) << "Can only save to format=" << fmt_;
-  std::string meta_file = GetMetaFilePath(file_name);
-  SaveMetaDataToFile(meta_file, fmap_);
-  SaveBinaryToFile(file_name, data_);
-}
-
-void SYCLModuleNode::SaveToBinary(dmlc::Stream* stream) {
-  stream->Write(fmt_);
-  stream->Write(fmap_);
-  stream->Write(data_);
 }
 
 std::string SYCLModuleNode::GetSource(const std::string& format) {
@@ -216,6 +181,29 @@ void SYCLModuleNode::Init() {
                                    << "delimiter was found.";
   ICHECK(fmap_.size() == parsed_kernels_.size())
       << "The number of parsed kernel sources does not match the number of kernel functions";
+  if(this->lib_compiler.load_from_file){
+    so_handler_ = dlopen(this->lib_compiler.shared_lib_path.c_str(), RTLD_LAZY);
+  }else{
+    // create the folder to store sycl temporary files
+    if(access(this->lib_compiler.prefix.c_str(), F_OK) == -1){
+      std::string cmd = "mkdir "+this->lib_compiler.prefix;
+      system(cmd.c_str());
+    }
+    // sycl kernel source code
+    std::ofstream kernels_file;
+    kernels_file.open(this->lib_compiler.source_file_path);
+    kernels_file << GetSource("sycl");
+    kernels_file.close();
+    // compile kernel source code to share libary
+    std::cout<<"[SYCL] Compile kernels source code(" + this->lib_compiler.source_file_path + ") to share library."<<std::endl;
+    VLOG(0) << this->lib_compiler.command;
+    system(this->lib_compiler.command.c_str());
+    /*std::string exec_result = shell_exec(this->lib_compiler.command).second;
+    std::cout<< exec_result;*/
+    // dlopen sycl share libary
+    so_handler_ = dlopen(this->lib_compiler.shared_lib_path.c_str(), RTLD_LAZY);
+  }
+  ICHECK(so_handler_ != NULL) << "ERROR:"<<dlerror()<<":dlopen\n";
 }
 
 Module SYCLModuleCreate(std::string data, std::string fmt,
@@ -223,6 +211,28 @@ Module SYCLModuleCreate(std::string data, std::string fmt,
   auto n = make_object<SYCLModuleNode>(data, fmt, fmap, source);
   n->Init();
   return Module(n);
+}
+Module SYCLModuleCreate(std::string data, std::string fmt,
+                          std::unordered_map<std::string, FunctionInfo> fmap, std::string source, std::string path_key) {
+  auto n = make_object<SYCLModuleNode>(data, fmt, fmap, source, path_key);
+  n->Init();
+  return Module(n);
+}
+
+void SYCLModuleNode::SaveToFile(const std::string& file_name, const std::string& format) {
+  std::string fmt = GetFileFormat(file_name, format);
+  ICHECK_EQ(fmt, fmt_) << "Can only save to format=" << fmt_;
+  std::string meta_file = GetMetaFilePath(file_name);
+  SaveMetaDataToFile(meta_file, fmap_);
+  SaveBinaryToFile(file_name, data_);
+  SaveBinaryToFile(file_name+"_path_key", this->lib_compiler.file_path_key);
+}
+
+void SYCLModuleNode::SaveToBinary(dmlc::Stream* stream) {
+  stream->Write(fmt_);
+  stream->Write(fmap_);
+  stream->Write(data_);
+  stream->Write(this->lib_compiler.file_path_key);
 }
 
 // Load module from module.
@@ -233,7 +243,9 @@ Module SYCLModuleLoadFile(const std::string& file_name, const std::string& forma
   std::string meta_file = GetMetaFilePath(file_name);
   LoadBinaryFromFile(file_name, &data);
   LoadMetaDataFromFile(meta_file, &fmap);
-  return SYCLModuleCreate(data, fmt, fmap, std::string());
+  std::string path_key;
+  LoadBinaryFromFile(file_name+"_path_key", &path_key);
+  return SYCLModuleCreate(data, fmt, fmap, std::string(), path_key);
 }
 
 Module SYCLModuleLoadBinary(void* strm) {
@@ -244,7 +256,9 @@ Module SYCLModuleLoadBinary(void* strm) {
   stream->Read(&fmt);
   stream->Read(&fmap);
   stream->Read(&data);
-  return SYCLModuleCreate(data, fmt, fmap, std::string());
+  std::string path_key;
+  stream->Read(&path_key);
+  return SYCLModuleCreate(data, fmt, fmap, std::string(), path_key);
 }
 
 TVM_REGISTER_GLOBAL("runtime.module.loadfile_sycl").set_body_typed(SYCLModuleLoadFile);

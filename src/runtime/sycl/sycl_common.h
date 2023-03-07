@@ -111,24 +111,29 @@ class SYCL_LIB_COMPILER {
     SYCL_LIB_COMPILER(){}
     SYCL_LIB_COMPILER(int module_id){
       int pid = (int)getpid();
-      std::string filename = prefix + "/sycl_" + std::to_string(pid) + "_" +std::to_string(module_id);
+      file_path_key = std::to_string(pid) + "_" +std::to_string(module_id);
+      std::string filename = prefix + "/sycl_" + file_path_key;
       //std::string filename = prefix + "/sycl_" + getUUID();
       source_file_path = filename + ".cc";
       shared_lib_path = filename + ".so";
       command = sycl_compiler +" "+sycl_flags +" "+ source_file_path +" -o "+shared_lib_path;
     }
-    void import_source(std::string import_path){
-      source_file_path = import_path+ ".cc";
-      shared_lib_path = import_path + ".so";
+    SYCL_LIB_COMPILER(std::string path_key){
+      load_from_file = true;
+      file_path_key = path_key;
+      std::string filename = prefix + "/sycl_" + file_path_key;
+      source_file_path = filename + ".cc";
+      shared_lib_path = filename + ".so";
       command = sycl_compiler +" "+sycl_flags +" "+ source_file_path +" -o "+shared_lib_path;
     }
-
     std::string sycl_compiler = SYCL_CXX_COMPILER;
     std::string sycl_flags = SYCL_FLAGS;
     std::string prefix = SYCL_TEMP_FOLDER;
+    std::string file_path_key;
     std::string source_file_path;
     std::string shared_lib_path;
     std::string command;
+    bool load_from_file = false;
   private:
     std::string getUUID(unsigned int len = 5){
       std::string str;
@@ -250,6 +255,13 @@ class SYCLModuleNode : public ModuleNode {
         workspace_ = GetGlobalWorkspace();
         workspace_->module_num++;           //the number of sycl_modules add 1
         lib_compiler = syclT::SYCL_LIB_COMPILER(workspace_->module_num);
+      }
+  // load from file
+  explicit SYCLModuleNode(std::string data, std::string fmt,
+                            std::unordered_map<std::string, FunctionInfo> fmap, std::string source, std::string path_key)
+      : data_(data), fmt_(fmt), fmap_(fmap), source_(source) {
+        workspace_ = GetGlobalWorkspace();
+        lib_compiler = syclT::SYCL_LIB_COMPILER(path_key);
       }
   // destructor
   ~SYCLModuleNode();
