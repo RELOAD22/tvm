@@ -260,6 +260,8 @@ void CodeGenSYCL::PrintVecAddr(const BufferNode* buffer, DataType t, PrimExpr ba
 }
 
 void CodeGenSYCL::PrintStorageSpace(const std::string& scope, std::ostream& os) {  // NOLINT(*)
+  os << "sycl::access::address_space::generic_space";
+  /*
   if (scope == "global") {
     os << "sycl::access::address_space::global_space";
   } else if (scope == "shared") {
@@ -267,6 +269,7 @@ void CodeGenSYCL::PrintStorageSpace(const std::string& scope, std::ostream& os) 
   } else {
     os << "sycl::access::address_space::private_space";
   }
+  */
 }
 
 std::string CodeGenSYCL::GetVecLoad(DataType t, const BufferNode* buffer, PrimExpr base) {
@@ -284,6 +287,7 @@ std::string CodeGenSYCL::GetVecLoad(DataType t, const BufferNode* buffer, PrimEx
     scope = it->second;
   }
   PrintStorageSpace(scope, os);
+  os << ", sycl::access::decorated::no";
   os << ">(";
   PrintVecAddr(buffer, t, base, os);
   os << "));";
@@ -304,6 +308,7 @@ void CodeGenSYCL::PrintVecStore(const BufferNode* buffer, DataType t, PrimExpr b
     scope = it->second;
   }
   PrintStorageSpace(scope, stream);
+  stream  << ", sycl::access::decorated::no";
   stream  << ">(";
   PrintVecAddr(buffer, t, base, stream);
   stream << "));\n";
