@@ -75,6 +75,7 @@ class SYCLWrappedFunc {
     }else{
       SYCL_CALL(kernel_func(Queue, k0_dimGrid, k0_dimBlock, void_args));
     }
+    Queue.wait_and_throw();
   }
 
  private:
@@ -101,8 +102,8 @@ SYCLModuleNode::~SYCLModuleNode() {
       dlclose(so_handler_);
     }
     // delete source code and share library
-    //std::remove(this->file_path.source_file_path.c_str());
-    //std::remove(this->file_path.shared_lib_path.c_str());
+    std::remove(this->lib_compiler.source_file_path.c_str());
+    std::remove(this->lib_compiler.shared_lib_path.c_str());
   }
   // free the kernels
 }

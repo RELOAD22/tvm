@@ -1017,7 +1017,7 @@ def local_run(
 
     measure_results = []
     assert len(inputs) == len(build_results), "Measure input size should be equal to build results"
-    worker = PopenWorker()
+    worker = PopenWorker(maximum_uses=1)
     for inp, build_res in zip(inputs, build_results):
         if build_res.error_no != 0:
             res = (

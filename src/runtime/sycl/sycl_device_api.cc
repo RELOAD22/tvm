@@ -81,8 +81,8 @@ void SYCLWorkspace::GetAttr(Device dev, DeviceAttrKind kind, TVMRetValue* rv) {
     }
     case kMaxClockRate: {
       cl_uint max_clock_frequency = this->devices[index].get_info<sycl::info::device::max_clock_frequency>();
-      // SYCL returns the clock rate in MHz, while CUDA/ROCm return the
-      // clock rate in kHz.  Converting to the same units for each.
+      // SYCL returns clock rate in MHz, while CUDA/ROCm return the clock rate in kHz.
+      // So * 1000.
       *rv = static_cast<int32_t>(max_clock_frequency * 1000);
       break;
     }

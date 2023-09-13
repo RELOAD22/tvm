@@ -110,7 +110,6 @@ void CodeGenSYCL::AddFunction(const PrimFunc& f) {
   this->PrintIndent();
   stream << "});\n";
   this->PrintIndent();
-  stream << "Q.wait();\n";
   this->EndScope(func_scope);
   stream << "}\n";
   /*
